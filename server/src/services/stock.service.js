@@ -1,0 +1,416 @@
+// /server/src/services/stock.service.js
+const { Estoque, sequelize } = require('../config/database');
+const { Op } = require('sequelize');
+
+// Lógica para transformar o texto do PDF em dados estruturados
+function parseTxtToWheels(text) {
+    const lines = text.trim().split('\n');
+    const results = [];
+
+    // O seu regex, inalterado
+    const pattern = /(\S+)\s+([\dXx,\.]+)\s+([\dXx\/-]+)\s+(-?\d{1,3})\s+(.*?)\s+(\d+)\s+(\d+)$/;
+
+    for (const line of lines) {
+        if (!line.trim()) continue;
+
+        const match = line.match(pattern);
+        
+        if (match) {
+            const [
+                _, 
+                modelo, 
+                aro, 
+                pcd, 
+                offset, 
+                acabamento, 
+                qtde_sp, 
+                qtde_sc
+            ] = match;
+
+            results.push({
+                MODELO: modelo.trim(),
+                ARO: aro.trim(),
+                PCD: pcd.trim(),
+                OFFSET: offset.trim(),
+                ACABAMENTO: acabamento.trim(),
+                QTDE_SP: parseInt(qtde_sp),
+                QTDE_SC: parseInt(qtde_sc)
+            });
+        } else {
+            console.warn(`Linha ignorada (não corresponde ao padrão): "${line}"`);
+        }
+    }
+
+    return results;
+}
+
+
+// ================= SALVAR ESTOQUE SAFE ==========================================
+// Lógica para salvar os dados no banco de dados (exemplo)
+//const saveStock = async (estoque) => {
+//    try {
+//        // 1. Limpar a tabela antes de inserir novos dados
+//        console.log('Limpando a tabela de estoque...');
+//        await Estoque.destroy({ where: {} });
+//        console.log('Tabela estoque_rodas_distribuidora limpa com sucesso.');
+//        
+//        let rodasInseridas = 0;
+//        let registrosParaInserir = [];
+//
+//        // 2. Iterar sobre o array de rodas e inserir cada uma
+//        for (const roda of estoque) {
+//            //const sqlInsert = `
+//            //    INSERT INTO estoque_rodas_distribuidora (
+//            //        modelo,
+//            //        aro,
+//            //        pcd,
+//            //        offset,
+//            //        acabamento,
+//            //        qtde_sp,
+//            //        qtde_sc
+//            //    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+//            //`;
+//            //const values = [
+//            //    roda.MODELO,
+//            //    roda.ARO,
+//            //    roda.PCD,
+//            //    roda.OFFSET,
+//            //    roda.ACABAMENTO,
+//            //    roda.QTDE_SP,
+//            //    roda.QTDE_SC
+//            //];
+//            const novoRegistro = {
+//                modelo: roda.MODELO,
+//                aro: roda.ARO,
+//                pcd: roda.PCD,
+//                offset: roda.OFFSET,
+//                acabamento: roda.ACABAMENTO,
+//                qtde_sp: roda.QTDE_SP,
+//                qtde_sc: roda.QTDE_SC
+//            };
+//            registrosParaInserir.push(novoRegistro);
+//            rodasInseridas++;
+//        }
+//
+//        if (registrosParaInserir.length > 0) {
+//            await Estoque.bulkCreate(registrosParaInserir);
+//        }
+//        console.log(`Estoque de rodas atualizado com sucesso! ${rodasInseridas} rodas inseridas.`);
+//
+//    } catch (error) {
+//        console.error('Erro ao atualizar o estoque:', error);
+//        // Lança o erro para que o controller o capture
+//        throw error;
+//    }
+//};
+
+// ========================== TENTATIVA DE NOVA FORMA DE SAVE ESTOQUE ================================
+
+//const saveStock = async (estoque) => {
+//    // Lista das colunas que identificam a roda (chave composta)
+//    const uniqueFields = ['modelo', 'aro', 'pcd', 'offset', 'acabamento'];
+//    
+//    // Inicia uma transação para garantir que a operação seja atômica
+//    const transaction = await sequelize.transaction();
+//    
+//    try {
+//        console.log("Iniciando a sincronização inteligente de estoque...");
+//
+//        // 1. ZERAR O ESTOQUE ANTIGO: Marca como 0 todas as quantidades.
+//        console.log('Zerando o estoque antes da atualização...');
+//        await Estoque.update(
+//            { qtde_sp: 0, qtde_sc: 0 },
+//            { where: {}, transaction: transaction }
+//        );
+//        console.log('Estoque zerado com sucesso.');
+//
+//        let rodasProcessadas = 0;
+//        
+//        // 2. PREPARAÇÃO DOS DADOS: Cria a lista de objetos para o Upsert
+//        const registrosParaUpsert = estoque.map(roda => ({
+//            modelo: roda.MODELO,
+//            aro: roda.ARO,
+//            pcd: roda.PCD,
+//            offset: roda.OFFSET,
+//            acabamento: roda.ACABAMENTO,
+//            // Mantém o SKU como dado
+//            sku: roda.SKU,
+//            qtde_sp: roda.QTDE_SP,
+//            qtde_sc: roda.QTDE_SC,
+//        }));
+//        
+//        // 3. UPSERT EM LOTE (Inserir ou Atualizar)
+//        const resultadosInsercao = await Estoque.bulkCreate(registrosParaUpsert, {
+//            // AQUI O SEQUELIZE USA O ÍNDICE COMPOSTO PARA ENCONTRAR DUPLICATAS
+//            updateOnDuplicate: [
+//                ...uniqueFields, 
+//                'sku',           
+//                'qtde_sp',       
+//                'qtde_sc'
+//            ],
+//            transaction: transaction,
+//            order: [['modelo', 'ASC']],
+//            // NOVO: Retorna os registros para que possamos verificar o estado (se foi criado ou atualizado)
+//            // Nota: Este parâmetro só é totalmente confiável em PostgreSQL e MSSQL.
+//            returning: true 
+//        });
+//        
+//        // 4. LOG DE NOVOS MODELOS
+//        let novosModelos = 0;
+//        
+//        resultadosInsercao.forEach(registro => {
+//            // O Sequelize marca um registro como novo se ele realmente foi inserido (e não apenas atualizado)
+//            if (registro.isNewRecord) {
+//                console.log(`\n\n[MODELO NOVO DETECTADO] Inserindo na tabela:\nModelo: ${registro.modelo}, Aro: ${registro.aro}, PCD: ${registro.pcd}, Acabamento: ${registro.acabamento}\n`);
+//                novosModelos++;
+//            }
+//        });
+//        
+//        await transaction.commit();
+//        
+//        rodasProcessadas = registrosParaUpsert.length;
+//        console.log(`\n--- SINCRONIZAÇÃO CONCLUÍDA ---`);
+//        //console.log(`Modelos no arquivo: ${rodasProcessadas}`);
+//        //console.log(`Novos modelos adicionados: ${novosModelos}`);
+//        console.log(`Estoque sincronizado por chave composta!`);
+//
+//    } catch (error) {
+//        // Desfaz (rollback) a transação se houver qualquer erro
+//        await transaction.rollback(); 
+//        console.error('Erro fatal ao sincronizar o estoque:', error);
+//        throw error;
+//    }
+//};
+
+//============================== OUTRO SALVAR ESTOQUE CRAZY ============================
+
+const fixModelName = (modelName) => {
+    // Garante que o nome seja uma string para o switch/case funcionar
+    const name = String(modelName).trim().toLowerCase(); 
+
+    switch (name) {
+        case 'morga':
+        case 'morg':
+            return 'morgan'; // Retorna o nome completo e correto
+        
+        case 'orbita':
+            return 'orbital';
+
+        case 'newsu':
+            return 'newsun';
+
+        case 'porsc':
+            return 'porsch';
+        
+        case 'samps':
+            return 'sampso';
+
+        case 'stroll':
+            return 'strolle';
+
+        case 'discov':
+            return 'discove';
+        
+        case 'ballin':
+            return 'ballina';
+
+        case 'silver':
+            return 'silvera';
+
+        case 'summe':
+            return 'summer';
+
+
+        default:
+            return name; // Retorna o nome original se não for um caso conhecido
+    }
+};
+
+const fixAcabamento = (acabamento) => {
+    // Garante que o nome seja uma string para o switch/case funcionar
+    const name = String(acabamento).trim().toLowerCase(); 
+
+    switch (name) {
+        
+        case 'gbbd (grafite brilho':
+            return 'gbbd (grafite brilho borda'; // Retorna o nome completo e correto
+        
+
+        default:
+            return name; // Retorna o nome original se não for um caso conhecido
+    }
+};
+
+
+const normalizeString = (str) => {
+    if (str === null || str === undefined) return '';
+    return String(str).trim().toLowerCase();
+};
+
+const saveStock = async (estoque) => {
+    // Lista das colunas que identificam a roda (chave composta)
+    const uniqueFields = ['modelo', 'aro', 'pcd', 'offset', 'acabamento'];
+    
+    // Inicia uma transação para garantir que a operação seja atômica
+    const transaction = await sequelize.transaction();
+    
+    try {
+        console.log("Iniciando a sincronização inteligente de estoque...");
+
+        // 1. PREPARAÇÃO DOS DADOS: Cria a lista de objetos para o Upsert
+        const registrosParaUpsert = estoque.map((roda, index) => {
+
+            // --- CORREÇÃO DE MODELOS INCOMPLETOS --
+
+            const nomeModeloCorrigido = fixModelName(roda.MODELO);
+
+            // --- FIM DA CORREÇÃO DE MODELOS INCOMPLETOS --
+
+            // -- CORREÇÃO ACABAMENTO INCOMPLETO --
+                const acabamentoCorrigido = fixAcabamento(roda.ACABAMENTO);
+            // -- FIM DA CORREÇÃO ACABAMENTO INCOMPLETO --
+            
+            let aroCorrigido = String(roda.ARO || '');
+            
+            // --- CORREÇÃO DO CAMPO ARO (Padronização) ---
+            // 1. Regra de Negócio: Se o aro termina em vírgula (ex: '20x7,'), assume-se que é ',5' e corrige.
+            if (aroCorrigido.endsWith(',')) {
+                //console.log(aroCorrigido);
+                 aroCorrigido = `${aroCorrigido}5`; // '20x7,' vira '20x7,5'
+                //console.log(aroCorrigido);
+            }
+            // --- FIM DA CORREÇÃO DO CAMPO ARO ---
+            
+
+
+            // Normaliza cada campo da chave composta
+            const modelo = normalizeString(nomeModeloCorrigido);
+            // CORREÇÃO ESSENCIAL: Usa o aroCorrigido e normaliza para a chave
+            const aro = normalizeString(aroCorrigido); 
+            const pcd = normalizeString(roda.PCD);
+            const offset = normalizeString(roda.OFFSET);
+            const acabamento = normalizeString(acabamentoCorrigido);
+
+            const unique_key = `${modelo}|${aro}|${pcd}|${offset}|${acabamento}`;
+
+            if (index < 5) {
+                console.log(`[DEBUG ENTRADA ${index}] Key Aro (Corrigido): ${aro} | Key Completa: ${unique_key}`);
+            }
+
+            return {
+                modelo: modelo,
+                aro: aro,
+                pcd: pcd,
+                offset: offset,
+                acabamento: acabamento,
+                sku: normalizeString(roda.SKU),
+                qtde_sp: roda.QTDE_SP,
+                qtde_sc: roda.QTDE_SC,
+                // Chave única normalizada para ser usada na comparação
+                unique_key: unique_key
+            };
+        });
+        
+        // 2. PRÉ-VERIFICAÇÃO: Identifica quais rodas já existem no DB.
+        const chavesParaVerificar = registrosParaUpsert.map(r => r.unique_key);
+        
+        // Monta a condição OR para buscar todas as chaves de entrada no DB
+        const orConditions = chavesParaVerificar.map(key => {
+            const [modelo, aro, pcd, offset, acabamento] = key.split('|');
+            return {
+                [Op.and]: { 
+                    // Normaliza os dados do DB (TRIM e LOWER) para comparação
+                    modelo: sequelize.where(sequelize.fn('LOWER', sequelize.fn('TRIM', sequelize.col('modelo'))), modelo),
+                    aro: sequelize.where(sequelize.fn('LOWER', sequelize.fn('TRIM', sequelize.col('aro'))), aro),
+                    pcd: sequelize.where(sequelize.fn('LOWER', sequelize.fn('TRIM', sequelize.col('pcd'))), pcd),
+                    offset: sequelize.where(sequelize.fn('LOWER', sequelize.fn('TRIM', sequelize.col('offset'))), offset),
+                    acabamento: sequelize.where(sequelize.fn('LOWER', sequelize.fn('TRIM', sequelize.col('acabamento'))), acabamento),
+                }
+            };
+        });
+
+        // Consulta o DB para encontrar todas as rodas existentes
+        const rodasExistentes = await Estoque.findAll({
+            attributes: uniqueFields,
+            where: {
+                [Op.or]: orConditions 
+            },
+            transaction: transaction,
+            raw: true
+        });
+
+        console.log(`\n[DEBUG 2] Total de rodas retornadas pelo DB: ${rodasExistentes.length}`);
+
+        
+        // Converte as rodas existentes em um Set de chaves únicas normalizadas
+        const chavesExistentesSet = new Set(
+            rodasExistentes.map((r, index) => {
+                const dbKey = `${normalizeString(r.modelo)}|${normalizeString(r.aro)}|${normalizeString(r.pcd)}|${normalizeString(r.offset)}|${normalizeString(r.acabamento)}`;
+                
+                // DEBUG 3: Loga as primeiras chaves do DB para comparação
+                if (index < 5) {
+                    console.log(`[DEBUG SAÍDA ${index}] Key DB: ${dbKey}`);
+                }
+                return dbKey;
+            })
+        );
+        
+        // 3. IDENTIFICAÇÃO DOS NOVOS MODELOS
+        let novosModelos = 0;
+        
+        registrosParaUpsert.filter(registro => {
+            const key = registro.unique_key; 
+            if (!chavesExistentesSet.has(key)) {
+                // Mantém o formato de log solicitado
+                //console.log(`\n[MODELO NOVO DETECTADO] Inserindo: ${registro.modelo} ${registro.aro} ${registro.pcd} ${registro.offset} ${registro.acabamento}`);
+                novosModelos++;
+                return true;
+            }
+            return false;
+        });
+        
+        // 4. ZERAR O ESTOQUE ANTIGO
+        console.log('Zerando o estoque antes da atualização...');
+        await Estoque.update(
+            { qtde_sp: 0, qtde_sc: 0 },
+            { where: {}, transaction: transaction }
+        );
+        console.log('Estoque zerado com sucesso.');
+
+        // 5. UPSERT EM LOTE
+        await Estoque.bulkCreate(registrosParaUpsert, {
+            updateOnDuplicate: [
+                ...uniqueFields, 
+                'sku',           
+                'qtde_sp',       
+                'qtde_sc'
+            ],
+            transaction: transaction,
+            //order: [['modelo', 'ASC']],
+            returning: true 
+        });
+        
+        await transaction.commit();
+        
+        rodasProcessadas = registrosParaUpsert.length;
+        const modelosAtualizados = rodasProcessadas - novosModelos;
+
+        console.log(`\n--- SINCRONIZAÇÃO CONCLUÍDA ---`);
+        console.log(`Modelos no arquivo: ${rodasProcessadas}`);
+        console.log(`Novos modelos adicionados: ${novosModelos}`);
+        console.log(`Modelos atualizados: ${modelosAtualizados}`); 
+        console.log(`Estoque sincronizado por chave composta!`);
+
+    } catch (error) {
+        await transaction.rollback(); 
+        console.error('Erro fatal ao sincronizar o estoque:', error);
+        throw error;
+    }
+};
+
+
+// Exporta as funções para serem usadas no controlador
+module.exports = {
+    parseTxtToWheels,
+    saveStock
+};
