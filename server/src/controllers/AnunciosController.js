@@ -1,7 +1,10 @@
 const meliService = require('../services/meli.service');
 const anuncioService = require('../services/anuncios.service');
+const stockService = require('../services/stock.service');
 const { run, all } = require('../config/database');
 
+
+//
 exports.getAnunciosSkusController = async (req, res) => {
     let access_token;
     try{
@@ -16,9 +19,10 @@ exports.getAnunciosSkusController = async (req, res) => {
 
         const anunciosId = await meliService.getIdsAnuncios(access_token)
 
-        //console.log(anunciosId)
-
+        
         const anuncios = await meliService.getDetalhesAnuncios(anunciosId.results, access_token)
+        
+        
         //salvarAnuncios(anuncios.results);
 
         //anuncios.forEach(anuncio => {
@@ -26,6 +30,7 @@ exports.getAnunciosSkusController = async (req, res) => {
         //});
         //console.log(anuncios[0].title);
         //console.dir(anuncios, { depth: null });
+
         anuncioService.salvarAnuncios(anuncios);
 
 
@@ -37,6 +42,10 @@ exports.getAnunciosSkusController = async (req, res) => {
     }
 
 }
+
+
+
+//
 
 exports.putAnunciosEstoqueController = async (req, res) => {
     let access_token;
@@ -51,14 +60,21 @@ exports.putAnunciosEstoqueController = async (req, res) => {
             }
 
             //captura infos do anúncio
-            const detalhesAnuncio = await anuncioService.getAnuncio('MLB4571602978');
+            const detalhesAnuncio = await anuncioService.getAnuncio('MLB4571700456');
+            console.log(detalhesAnuncio);
 
             //pega as infos da roda com o sku do anuncio
             const detalhesEstoque = await stockService.getRoda(detalhesAnuncio);
 
-            await meliService.updateEstoqueItemUnico(detalhesAnuncio, detalhesEstoque);
+            //console.log(detalhesEstoque);
 
+            const updatePayload = anuncioService.generateUpdatePayload(detalhesAnuncio, detalhesEstoque)
 
+            //console.log(updatePayload);
+
+            await meliService.updateEstoqueAnuncio(detalhesAnuncio, access_token, updatePayload)
+
+            res.status(200).send("Estoque do anúncio atualizado com sucesso!");
         }
         catch(error){
 

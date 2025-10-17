@@ -5,6 +5,12 @@ const { Anuncio, sequelize } = require('../config/database');
 
 const salvarAnuncios = async (anuncios) => {
 
+    const isAnuncioUnitario = (titulo) => {
+        if (!titulo || typeof titulo !== 'string') return false;
+        // Normaliza o título para maiúsculas e remove espaços antes de verificar
+        return titulo.trim().toUpperCase().startsWith('1 U'); 
+    };
+
     try {
         console.log("Iniciando o salvamento de anúncios no banco de dados...");
         
@@ -19,6 +25,8 @@ const salvarAnuncios = async (anuncios) => {
         let registrosParaInserir = [];
         // Itera sobre cada anúncio
         for (const anuncio of anuncios) {
+
+            const isUnitarioValue = isAnuncioUnitario(anuncio.titulo);
             // Itera sobre cada SKU dentro do anúncio
             for (const skuData of anuncio.skus) {
                 //const sql = `
@@ -32,7 +40,8 @@ const salvarAnuncios = async (anuncios) => {
                     sku_id: skuData.id,
                     sku: skuData.sku,
                     quantidade: skuData.quantidade,
-                    categoria: anuncio.categoria
+                    categoria: anuncio.categoria,
+                    isUnitario: isUnitarioValue
             };
             registrosParaInserir.push(novoRegistro);
             skusSalvos++    
@@ -50,6 +59,28 @@ const salvarAnuncios = async (anuncios) => {
 
 const getAnuncio = async (id_anuncio) => {
     try{
+        let detalhesAnuncio = [];
+
+        console.log("Capturando anúncio...");
+
+        const arrayAnuncio = await Anuncio.findAll({
+            where: { 
+                ml_id: id_anuncio
+            },
+            raw: true
+         });
+
+
+        for (const anuncio of arrayAnuncio){
+            detalhesAnuncio.push({
+                ml_id: anuncio.ml_id,
+                variation_id: anuncio.sku_id, 
+                sku: anuncio.sku,
+                isUnitario: anuncio.isUnitario
+            });
+        }
+
+        return (detalhesAnuncio);
 
     }catch(error){
         console.error("Erro ao capturar anúncio", error);
@@ -57,6 +88,66 @@ const getAnuncio = async (id_anuncio) => {
     }
 }
 
+const generateUpdatePayload = (detalhesAnuncio, detalhesEstoque) => {
+
+    console.log("Gerando payload... ")
+
+    // 1. Cria um mapa rápido de SKU -> Quantidade
+    // Isso transforma o array de estoque em um objeto { 'SKU_A': 100, 'SKU_B': 16, ... }
+    const mapaQuantidadesBrutas = detalhesEstoque.reduce((map, item) => {
+        // Garante que a quantidade seja um número inteiro e positivo
+        const quantidade = Math.max(0, parseInt(item.quantidade) || 0); 
+        map[item.sku] = quantidade;
+        return map;
+    }, {});
+
+    const variationsPayload = [];
+    let simpleItemPayload = null; 
+    // 2. Mapeia os detalhes do anúncio para criar o payload final
+    detalhesAnuncio.forEach(detalhe => {
+        // Busca a quantidade no mapa usando o SKU como chave
+        const quantidadeBruta = mapaQuantidadesBrutas[detalhe.sku] || 0; 
+        
+        let quantidadeFinal;
+
+        if(detalhe.isUnitario){
+            quantidadeFinal = quantidadeBruta
+        }else{
+            quantidadeFinal = Math.floor(quantidadeBruta / 4);
+        }
+
+        if(detalhe.variation_id.startsWith('MLB')){
+            simpleItemPayload = {
+                available_quantity: quantidadeFinal
+            };
+            
+        } else {
+            variationsPayload.push({
+                id: detalhe.variation_id, 
+                available_quantity: quantidadeFinal
+            });
+        }
+
+    });
+
+        //console.log(`[Cálculo Estoque] SKU: ${detalhe.sku} | Bruto: ${quantidadeBruta} | É Unitário: ${detalhe.isUnitario} | Final: ${quantidadeFinal}`);
+
+    if (simpleItemPayload) {
+        console.log("Payload Gerado (Simples):", simpleItemPayload);
+        // Retorna APENAS o objeto simples
+        return simpleItemPayload;
+    } else {
+        console.log("Payload Gerado (Variações):", variationsPayload);
+        // Retorna APENAS o array de variações
+        return variationsPayload;
+    }
+
+
+    
+};
+
 module.exports = {
-    salvarAnuncios
+    salvarAnuncios,
+    getAnuncio,
+    generateUpdatePayload
 };

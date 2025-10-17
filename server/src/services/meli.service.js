@@ -229,104 +229,191 @@ const getVendas = async (access_token) => {
     return { results: todasAsVendas };
 };
 
+//const getIdsAnuncios = async (access_token) => {
+//
+//    let todosOsAnuncios = [];
+//
+//    let offset = 0;
+//
+//    let limit = 50;
+//
+//    const headers = {
+//
+//        "Authorization": `Bearer ${access_token}`
+//
+//    };
+//
+//    let totalAnunciosApi = 0;
+//
+//
+//    while (true) {
+//
+//        //URL requisição de anuncios
+//
+//        let url = `https://api.mercadolibre.com/users/${SELLER_ID}/items/search?status=active&offset=${offset}&limit=${limit}`;
+//
+//        try {
+//
+//            const resposta = await fetch(url, {
+//
+//                method: 'GET',
+//
+//                headers: headers
+//
+//            });
+//
+//            if (!resposta.ok) {
+//
+//                // Lidar com erros de requisição, como 401 (não autorizado)
+//
+//                throw new Error(`Erro na requisição: ${resposta.status}`);
+//
+//            }
+//
+//
+//            const resposta_json = await resposta.json();
+//
+//            const anunciosDaPagina = resposta_json.results;
+//
+//
+//            if (offset === 0) {
+//
+//                totalAnunciosApi = resposta_json.paging.total;
+//
+//                console.log(resposta_json.paging.total);
+//
+//            }
+//
+//
+//            if (anunciosDaPagina && anunciosDaPagina.length > 0) {
+//
+//                todosOsAnuncios = todosOsAnuncios.concat(anunciosDaPagina);
+//
+//                offset += anunciosDaPagina.length;
+//
+//            }
+//
+//
+//            if (todosOsAnuncios.length >= totalAnunciosApi) {
+//                
+//                break;
+//
+//            }
+//
+//
+//        } catch (error) {
+//
+//            console.error('Erro ao capturar anúncios', error);
+//
+//            throw error;
+//
+//        }
+//
+//
+//    }
+//
+//    return { results: todosOsAnuncios };
+//
+//}
+
+
+// A função refatorada para usar o fluxo 'scan'
 const getIdsAnuncios = async (access_token) => {
-
+    
+    
     let todosOsAnuncios = [];
+    
 
-    let offset = 0;
-
-    let limit = 50;
+    const limit = 50; 
 
     const headers = {
-
         "Authorization": `Bearer ${access_token}`
-
     };
 
-    let totalAnunciosApi = 0;
+    let scroll_id = null; // O scroll_id será atualizado a cada requisição
+    let totalAnunciosApi = 0; // Para acompanhamento do progresso
 
+    try {
+        // --- 1. Primeira Chamada: Inicia o Scan e Obtém o 1º scroll_id e 1ª página ---
+        
+        let url = `https://api.mercadolibre.com/users/${SELLER_ID}/items/search?search_type=scan&limit=${limit}`; 
+        
+        let resposta = await fetch(url, {
+            method: 'GET',
+            headers: headers
+        });
 
-    while (true) {
-
-        //URL requisição de anuncios
-
-        const url = `https://api.mercadolibre.com/users/${SELLER_ID}/items/search?status=active&offset=${offset}&limit=${limit}`;
-        //`https://api.mercadolibre.com/users/${SELLER_ID}/items/search?search_type=scan&offset=${offset}`;
-
-        //`https://api.mercadolibre.com/users/${SELLER_ID}/items/search?search_type=scan&offset=${offset}`
-
-        //`https://api.mercadolibre.com/users/${SELLER_ID}/items/search?&offset=${offset}`;
-
-
-        try {
-
-
-
-            const resposta = await fetch(url, {
-
-                method: 'GET',
-
-                headers: headers
-
-            });
-
-
-
-
-            if (!resposta.ok) {
-
-                // Lidar com erros de requisição, como 401 (não autorizado)
-
-                throw new Error(`Erro na requisição: ${resposta.status}`);
-
-            }
-
-
-            const resposta_json = await resposta.json();
-
-            const anunciosDaPagina = resposta_json.results;
-
-
-            if (offset === 0) {
-
-                totalAnunciosApi = resposta_json.paging.total;
-
-                console.log(resposta_json.paging.total);
-
-            }
-
-
-
-            if (anunciosDaPagina && anunciosDaPagina.length > 0) {
-
-                todosOsAnuncios = todosOsAnuncios.concat(anunciosDaPagina);
-
-                offset += anunciosDaPagina.length;
-
-            }
-
-
-            if (todosOsAnuncios.length >= totalAnunciosApi) {
-
-                break;
-
-            }
-
-
-        } catch (error) {
-
-            console.error('Erro ao capturar anúncios', error);
-
-            throw error;
-
+        if (!resposta.ok) {
+            throw new Error(`Erro na requisição inicial: ${resposta.status}`);
         }
 
+        let resposta_json = await resposta.json();
+        
+        // Configura o total e o primeiro scroll_id
+        totalAnunciosApi = resposta_json.paging.total || 0;
+        scroll_id = resposta_json.scroll_id;
+        
+        console.log(`Total de anúncios a buscar: ${totalAnunciosApi}`);
+        
+        // Adiciona a primeira página de resultados
+        if (resposta_json.results && resposta_json.results.length > 0) {
+            todosOsAnuncios = todosOsAnuncios.concat(resposta_json.results);
+            //console.log(`1ª página capturada. Total até agora: ${todosOsAnuncios.length}`);
+        }
 
+        // --- 2. Loop: Continua a Busca usando o scroll_id ---
+        
+        // Continua enquanto houver um scroll_id válido para a próxima página
+        while (scroll_id) { 
+            
+            // Se o total for 0 ou já tivermos capturado tudo, saímos
+            if (totalAnunciosApi > 0 && todosOsAnuncios.length >= totalAnunciosApi) {
+                break;
+            }
+            
+            // URL com o scroll_id da requisição anterior
+            url = `https://api.mercadolibre.com/users/${SELLER_ID}/items/search?search_type=scan&limit=${limit}&scroll_id=${scroll_id}`;
+
+            resposta = await fetch(url, {
+                method: 'GET',
+                headers: headers
+            });
+
+            if (!resposta.ok) {
+                throw new Error(`Erro na requisição com scroll_id: ${resposta.status}`);
+            }
+
+            resposta_json = await resposta.json();
+            
+            const anunciosDaPagina = resposta_json.results;
+            
+            // 3. Condição de Parada: Se a página estiver vazia, o scan acabou.
+            if (!anunciosDaPagina || anunciosDaPagina.length === 0) {
+                break;
+            }
+            
+            // Adiciona a página atual de resultados
+            todosOsAnuncios = todosOsAnuncios.concat(anunciosDaPagina);
+            
+            // ATUALIZA o scroll_id para a próxima iteração
+            scroll_id = resposta_json.scroll_id;
+            
+            //console.log(`Próxima página capturada. Total até agora: ${todosOsAnuncios.length}`);
+        }
+
+    } catch (error) {
+        console.error('Erro no processo de scan de anúncios', error);
+        throw error;
     }
-
+    
+    console.log(`Busca finalizada. Total de IDs capturados: ${todosOsAnuncios.length}`);
+    
     return { results: todosOsAnuncios };
-
 }
+
+
+
+
 
 
 const getDetalhesAnuncios = async (anuncioIds, access_token) => {
@@ -484,6 +571,67 @@ const getDetalhesAnuncios = async (anuncioIds, access_token) => {
     }
 };
 
+const updateEstoqueAnuncio = async (detalhesAnuncio, access_token, updatePayload) => {
+    
+    
+    const mlItemId = detalhesAnuncio[0].ml_id
+    //anuncio.ml_id;
+    const url = `https://api.mercadolibre.com/items/${mlItemId}`;
+
+    const headers = {
+        "Authorization": `Bearer ${access_token}`,
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+    };
+
+
+    let payload;
+    let isSimpleUpdate = false;
+
+
+
+    if(!Array.isArray(updatePayload)){
+        
+
+        isSimpleUpdate = true;
+
+        payload = updatePayload
+        //console.log("payload simples: ");
+        //console.log(payload);
+    } else {
+        payload = {
+            variations: updatePayload
+        }
+        //console.log("payload variations: ");
+        //console.log(updatePayload);
+    }
+    // 2. Cria o payload no formato exigido pelo Mercado Livre
+    //const payload = {
+    //    variations: updatePayload
+    //};
+
+    //const payload = {
+    //    //id: MLB5053247606,
+    //    available_quantity: 2
+    //};
+
+    // 3. Executa a requisição PUT
+    const resposta = await fetch(url, {
+        method: 'PUT',
+        headers: headers,
+        body: JSON.stringify(payload)
+    });
+
+    const respostaJson = await resposta.json();
+
+    if (!resposta.ok) {
+        console.error(`Erro ao atualizar estoque (${resposta.status}):`, respostaJson);
+        throw new Error(`Falha na atualização do estoque (Status ${resposta.status}).`);
+    }
+
+    console.log("[ML API] Estoque atualizado com sucesso.");
+    return respostaJson;
+};
 
 
 
@@ -493,5 +641,6 @@ module.exports = {
   authTest,
   salvarVendas,
   getIdsAnuncios,
-  getDetalhesAnuncios
+  getDetalhesAnuncios,
+  updateEstoqueAnuncio
 };
