@@ -49,6 +49,7 @@ exports.getAnunciosSkusController = async (req, res) => {
 
 exports.putAnunciosEstoqueController = async (req, res) => {
     let access_token;
+    
         try{
             const resposta = await meliService.authTest();
             if(!resposta){
@@ -59,20 +60,47 @@ exports.putAnunciosEstoqueController = async (req, res) => {
                 access_token = resposta;
             }
 
+            let arrayTeste = ['MLB2987852728', 'MLB3334015125', 'MLB3998364581']; // recebe anúncios que tem essas rodas como produto -> m11 15 bd / m17 15 / mk7 20 5x100 / m23 bf / m25 15 4x100
+            
+            
             //captura infos do anúncio
-            const detalhesAnuncio = await anuncioService.getAnuncio('MLB4571700456');
-            console.log(detalhesAnuncio);
+            for(const anuncio of arrayTeste){
+                let missingSku = false;
+            
+                const detalhesAnuncio = await anuncioService.getAnuncio(anuncio);
+                console.log(detalhesAnuncio);
 
             //pega as infos da roda com o sku do anuncio
-            const detalhesEstoque = await stockService.getRoda(detalhesAnuncio);
+                const detalhesEstoque = await stockService.getRoda(detalhesAnuncio);
 
+                console.log(detalhesEstoque);
+
+                for (const detalheEstoque of detalhesEstoque){
+
+                    if(detalheEstoque.quantidade === null){
+
+                        missingSku = true;
+
+                    }
+
+                }
+
+                if(!missingSku){
+
+                    const updatePayload = anuncioService.generateUpdatePayload(detalhesAnuncio, detalhesEstoque)
+
+                    await meliService.updateEstoqueAnuncio(detalhesAnuncio, access_token, updatePayload)
+
+                }
+                
+            }
             //console.log(detalhesEstoque);
 
-            const updatePayload = anuncioService.generateUpdatePayload(detalhesAnuncio, detalhesEstoque)
+            //const updatePayload = anuncioService.generateUpdatePayload(detalhesAnuncio, detalhesEstoque)
 
             //console.log(updatePayload);
 
-            await meliService.updateEstoqueAnuncio(detalhesAnuncio, access_token, updatePayload)
+            //await meliService.updateEstoqueAnuncio(detalhesAnuncio, access_token, updatePayload)
 
             res.status(200).send("Estoque do anúncio atualizado com sucesso!");
         }

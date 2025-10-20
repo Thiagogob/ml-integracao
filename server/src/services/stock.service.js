@@ -401,7 +401,7 @@ const saveStock = async (estoque) => {
 
 
 const getRoda = async (detalhesAnuncio) => {
-    
+    let quantidadeTotal;
     try{
         console.log("Capturando detalhes de estoque...")
         let skuRodas = [];
@@ -423,7 +423,15 @@ const getRoda = async (detalhesAnuncio) => {
                 raw: true
             })
 
-            let quantidadeTotal = roda.qtde_sp + roda.qtde_sc
+            if(roda){
+                quantidadeTotal = roda.qtde_sp + roda.qtde_sc;
+
+                
+            } else {
+                quantidadeTotal = null
+                console.warn(`[ESTOQUE] Não há sku correspondente no estoque da distribuidora para o SKU: ${skuRoda}`);
+            }
+            
 
             quantidadesDisponiveis.push({
                 sku: skuRoda, // É bom salvar o SKU para referência
