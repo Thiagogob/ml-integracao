@@ -117,46 +117,6 @@ const authTest = async () => {
 };
 
 
-const salvarVendas = async (vendas) => {
-    let vendasSalvas = 0;
-    try{
-        console.log("Iniciando o salvamento de vendas no banco de dados...");
-
-    for (const venda of vendas) {
-        
-        //const sql = `
-        //    INSERT INTO vendas_ml (data, id_ml, sku, valor, comissao) 
-        //    VALUES (?, ?, ?, ?, ?)
-//
-        //`;
-        //const params = [
-        //    venda.date_closed,
-        //    venda.id,
-        //    venda.order_items[0].item.seller_sku,
-        //    venda.order_items[0].unit_price,
-        //    venda.order_items[0].sale_fee
-        //];
-        //
-                            
-            await Venda.create({
-                    data: venda.date_closed,
-                    id_ml: venda.id, // O ID do pedido
-                    sku: venda.order_items[0].item.seller_sku,
-                    valor: venda.order_items[0].unit_price,
-                    comissao: venda.order_items[0].sale_fee
-                });
-
-             vendasSalvas++;
-        
-    }
-    console.log(`Dados de ${vendasSalvas} vendas salvas no banco de dados.`);
-    } catch(error){
-         console.error('Erro ao salvar as vendas:', error);
-            throw error; // Lança o erro para que o controller o capture
-    }
-        
-};
-
 
 const getVendas = async (access_token) => {
     
@@ -188,6 +148,9 @@ const getVendas = async (access_token) => {
         
         //console.log("URL da Requisição:", url);
 
+        //console.log(`PAGINACAO: Offset=${offset}, Limit=${limit}. Total Esperado=${totalVendasApi}`);
+        //console.log("URL da Requisição:", url);
+
         try {
             const resposta = await fetch(url, {
                 method: 'GET',
@@ -200,6 +163,11 @@ const getVendas = async (access_token) => {
             }
 
             const resposta_json = await resposta.json();
+
+            //console.log("RESPOSTA API: Status:", resposta.status);
+            //console.log("RESPOSTA API: Total da Paginação:", resposta_json.paging.total);
+            //console.log("RESPOSTA API: Quantidade de vendas na página:", resposta_json.results ? resposta_json.results.length : 0);
+
             const vendasDaPagina = resposta_json.results;
             
             // Define o total de vendas na primeira iteração
@@ -210,12 +178,16 @@ const getVendas = async (access_token) => {
             // Adiciona as vendas da página atual ao array principal
             if (vendasDaPagina && vendasDaPagina.length > 0) {
                 todasAsVendas = todasAsVendas.concat(vendasDaPagina);
-                offset += vendasDaPagina.length;
+                offset += limit;
             }
             
+            //console.log(`COLETA: Vendas coletadas até agora: ${todasAsVendas.length}. Total API: ${totalVendasApi}.`);
+            //console.log(`PRÓXIMO PASSO: Novo Offset será: ${offset}.`);
             // Se o total de vendas coletadas for igual ou maior que o total da API, sai do loop
             if (todasAsVendas.length >= totalVendasApi) {
+                //console.log("PARADA: Condição de parada atingida. Saindo do loop.");
                 break;
+                
             }
 
         } catch (error) {
@@ -639,7 +611,6 @@ module.exports = {
   getAuth,
   getVendas,
   authTest,
-  salvarVendas,
   getIdsAnuncios,
   getDetalhesAnuncios,
   updateEstoqueAnuncio

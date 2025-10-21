@@ -68,6 +68,7 @@ const { syncDb, sequelize } = require('./config/database');
 const vendasRoutes = require('./routes/vendas.routes');
 const stockRoutes = require('./routes/stock.routes');
 const anunciosRoutes = require('./routes/anuncios.routes');
+const { startSalesScheduler } = require('./scheduling/salesScheduler');
 
 // 3. CONFIGURAR MIDDLEWARES
 app.use(express.json()); // Habilita o uso de JSON no corpo das requisições
@@ -88,6 +89,7 @@ const startServer = async () => {
         // Inicia o servidor Express (Apenas uma vez)
         server = app.listen(PORT, () => {
             console.log(`Servidor rodando em http://localhost:${PORT}`);
+            startSalesScheduler();
         });
 
     } catch (error) {

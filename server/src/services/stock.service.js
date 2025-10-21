@@ -430,6 +430,7 @@ const getRoda = async (detalhesAnuncio) => {
             } else {
                 quantidadeTotal = null
                 console.warn(`[ESTOQUE] Não há sku correspondente no estoque da distribuidora para o SKU: ${skuRoda}`);
+                return [];
             }
             
 
@@ -447,9 +448,104 @@ const getRoda = async (detalhesAnuncio) => {
     }
 }
 
+// ========================================================
+
+const subtrairJogoDeRoda = async (sku) => {
+    // Definimos a quantidade a ser subtraída (1 jogo)
+    const QUANTIDADE_A_SUBTRAIR = 4;
+    
+    // Usamos uma transação para garantir que a baixa seja atômica
+    const transaction = await sequelize.transaction();
+    
+    try {
+        console.log(`[BAIXA ESTOQUE] Iniciando baixa de 4 unidades para SKU: ${sku}`);
+
+        // 1. Busca os registros para verificar o estoque atual
+        const rodas = await Estoque.findAll({
+            where: { sku: sku },
+            transaction: transaction,
+            raw: true
+        });
+
+        if (rodas.length === 0) {
+            console.warn(`[BAIXA ESTOQUE] SKU '${sku}' não encontrado na tabela de estoque. Nenhuma baixa realizada.`);
+            await transaction.rollback();
+            return;
+        }
+
+        // Assumimos que o SKU só tem uma entrada no DB, mas usamos o for para iterar sobre o array
+        for (const roda of rodas) {
+            
+            const estoqueAtualTotal = roda.qtde_sp + roda.qtde_sc;
+            
+            if (estoqueAtualTotal < QUANTIDADE_A_SUBTRAIR) {
+                 console.warn(`[BAIXA ESTOQUE] Estoque insuficiente (${estoqueAtualTotal} unid.) para a baixa de ${QUANTIDADE_A_SUBTRAIR} unid. para SKU: ${sku}.`);
+                 // Não lançamos erro, mas pulamos a baixa
+                 continue; 
+            }
+            
+            // Variáveis que guardarão as novas quantidades
+            let novaQtdeSP = roda.qtde_sp;
+            let novaQtdeSC = roda.qtde_sc;
+            
+            // --- LÓGICA DE PRIORIZAÇÃO DA BAIXA ---
+            
+            if (roda.qtde_sp >= QUANTIDADE_A_SUBTRAIR) {
+                // REGRA 1: qtde_sp >= 4 -> Diminui 4 unidades de SP.
+                console.log(`[BAIXA ESTOQUE] Baixando 4 unidades do estoque SP.`);
+                novaQtdeSP = roda.qtde_sp - QUANTIDADE_A_SUBTRAIR;
+
+            } else if (roda.qtde_sp > 0 && roda.qtde_sp < QUANTIDADE_A_SUBTRAIR) {
+                // REGRA 2: qtde_sp entre 1 e 3 -> Baixa o que tiver em SP, e o restante de SC.
+                const qtdeBaixadaSP = roda.qtde_sp;
+                const qtdeFaltanteSC = QUANTIDADE_A_SUBTRAIR - qtdeBaixadaSP;
+                
+                // Baixa de SP
+                novaQtdeSP = 0;
+                
+                // Baixa de SC (garantido que qtdeFaltanteSC é > 0 e <= 4)
+                novaQtdeSC = roda.qtde_sc - qtdeFaltanteSC;
+                
+                console.log(`[BAIXA ESTOQUE] Usando ${qtdeBaixadaSP} unid. de SP e ${qtdeFaltanteSC} unid. de SC.`);
+
+            } else if (roda.qtde_sp === 0) {
+                // REGRA 3: qtde_sp = 0 -> Baixar as 4 rodas de SC.
+                console.log(`[BAIXA ESTOQUE] Usando 4 unidades do estoque SC.`);
+                novaQtdeSC = roda.qtde_sc - QUANTIDADE_A_SUBTRAIR;
+            }
+
+            // Garante que a quantidade nunca seja negativa (Embora a checagem inicial ajude)
+            novaQtdeSP = Math.max(0, novaQtdeSP);
+            novaQtdeSC = Math.max(0, novaQtdeSC);
+            
+            // --- Execução da Atualização ---
+            await Estoque.update(
+                { 
+                    qtde_sp: novaQtdeSP,
+                    qtde_sc: novaQtdeSC
+                },
+                { 
+                    where: { id: roda.id }, 
+                    transaction: transaction 
+                }
+            );
+        }
+        
+        await transaction.commit(); // Confirma a transação
+        
+        console.log(`[BAIXA ESTOQUE] Baixa concluída para SKU: ${sku}. 4 unidades subtraídas (se houvesse estoque).`);
+
+    } catch (error) {
+        await transaction.rollback(); // Desfaz a transação em caso de erro
+        console.error(`Erro fatal durante a baixa de estoque do SKU ${sku}:`, error);
+        throw error;
+    }
+};
+
 // Exporta as funções para serem usadas no controller
 module.exports = {
     parseTxtToWheels,
     saveStock,
-    getRoda
+    getRoda,
+    subtrairJogoDeRoda
 };

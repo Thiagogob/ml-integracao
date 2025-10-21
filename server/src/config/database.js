@@ -25,11 +25,13 @@ const Venda = sequelize.define('Venda', {
         primaryKey: true,
         autoIncrement: true,
     },
+    id_venda: { type: DataTypes.TEXT, unique: true }, 
     data: { type: DataTypes.TEXT },
     id_ml: { type: DataTypes.TEXT },
     sku: { type: DataTypes.TEXT },
     valor: { type: DataTypes.REAL(10, 2) },
     comissao: { type: DataTypes.REAL(10, 2) },
+    quantidade: {type: DataTypes.INTEGER},
 }, {
     tableName: 'vendas_ml',
     timestamps: false
@@ -96,6 +98,22 @@ const Anuncio = sequelize.define('Anuncio', {
     timestamps: false
 });
 
+const SyncControl = sequelize.define('SyncControl', {
+    // A chave será o identificador da tarefa ('last_sale_sync')
+    id: {
+        type: DataTypes.TEXT, 
+        primaryKey: true
+    },
+    // Armazena a data/hora do último processamento bem-sucedido
+    last_timestamp: { 
+        type: DataTypes.DATE,
+        allowNull: true // Pode ser nulo na primeira execução
+    },
+}, {
+    tableName: 'sync_control',
+    timestamps: false
+});
+
 
 // --- 2. Sincronização do Banco de Dados ---
 const syncDb = async () => {
@@ -118,126 +136,8 @@ module.exports = {
     Estoque,
     Token,
     Anuncio,
+    SyncControl,
     syncDb
 };
 
 
-//const sqlite3 = require('sqlite3').verbose();
-//
-//// Nome do arquivo do banco de dados
-//
-//
-// //Função para iniciar a conexão com o banco de dados SQLite
-// //Cria uma única instância da conexão que será usada em toda a aplicação
-//const db = new sqlite3.Database('mercado_livre_estoque.db', (err) => {
-//    if (err) {
-//        // Se a conexão falhar, imprima o erro e encerre a aplicação
-//        console.error('Erro ao abrir o banco de dados:', err.message);
-//        process.exit(1); // Encerra o processo com erro
-//    }
-//    console.log('Conexão com o banco de dados SQLite foi estabelecida.');
-//});
-//
-//
-//// Funções para lidar com operações no banco de dados de forma assíncrona
-//// Isso evita o uso de callbacks e deixa o código mais limpo
-//function run(sql, params = []) {
-//    return new Promise((resolve, reject) => {
-//        db.run(sql, params, function(err) {
-//            if (err) {
-//                console.error('Erro ao executar a query:', err.message);
-//                reject(err);
-//            } else {
-//                resolve({ id: this.lastID });
-//            }
-//        });
-//    });
-//}
-//
-//function all(sql, params = []) {
-//    return new Promise((resolve, reject) => {
-//        db.all(sql, params, (err, rows) => {
-//            if (err) {
-//                console.error('Erro ao buscar dados:', err.message);
-//                reject(err);
-//            } else {
-//                resolve(rows);
-//            }
-//        });
-//    });
-//}
-//
-//
-//
-//// Criação das tabelas na inicialização do banco de dados
-//// Isso garante que as tabelas existam antes que qualquer rota tente acessá-las
-//db.serialize(() => {
-//    db.run(`CREATE TABLE IF NOT EXISTS vendas_ml (
-//        id INTEGER PRIMARY KEY AUTOINCREMENT,
-//        data TEXT,
-//        id_ml TEXT,
-//        sku TEXT,
-//        valor REAL(10,2),
-//        comissao REAL(10,2)
-//    )`);
-//    console.log('Tabela "vendas_ml" verificada/criada.');
-//    
-//    // Você pode adicionar outras tabelas aqui, como a de "estoque"
-//    db.run(`CREATE TABLE IF NOT EXISTS estoque_rodas_distribuidora (
-//        id INTEGER PRIMARY KEY AUTOINCREMENT,
-//        modelo VARCHAR(50),
-//        aro VARCHAR(20),
-//        pcd VARCHAR(20),
-//        offset VARCHAR(10),
-//        acabamento VARCHAR(100),
-//        qtde_sp INT,
-//        qtde_sc INT,
-//        sku TEXT
-//    )`);
-//    console.log('Tabela "estoque_rodas_distribuidora" verificada/criada.');
-//
-//    db.run(`CREATE TABLE IF NOT EXISTS tokens_ml (
-//        id INTEGER PRIMARY KEY AUTOINCREMENT,
-//        access_token TEXT,
-//        refresh_token TEXT
-//    )`);
-//    console.log('Tabela "tokens_ml" verificada/criada.');
-//
-//    db.run(`CREATE TABLE IF NOT EXISTS anuncios (
-//            id INTEGER PRIMARY KEY AUTOINCREMENT,
-//            ml_id TEXT NOT NULL,
-//            titulo TEXT,
-//            marca TEXT,
-//            sku_id TEXT,
-//            sku TEXT,
-//            quantidade INTEGER,
-//            isUnitario BOOLEAN
-//    )`);
-//    console.log('Tabela "anuncios" verificada/criada.');
-//    
-//});
-//
-//
-////function fecharConexaoDb(db) {
-////    return new Promise((resolve, reject) => {
-////        if (!db) {
-////            console.warn('Tentativa de fechar uma conexão nula.');
-////            return resolve(); // Resolve sem erro se a conexão for nula
-////        }
-////        
-////        db.close((err) => {
-////            if (err) {
-////                console.error('Erro ao fechar o banco de dados:', err.message);
-////                return reject(err); // Rejeita a Promise em caso de erro
-////            }
-////            console.log('Banco de dados fechado com sucesso.');
-////            resolve(); // Resolve a Promise
-////        });
-////    });
-////}
-//
-//module.exports = {
-//    db, // Exporta a instância para casos de uso avançados
-//    run, // Exporta a função para queries de inserção/update
-//    all  // Exporta a função para queries de busca
-//};

@@ -1,4 +1,5 @@
 const meliService = require('../services/meli.service');
+const vendasService = require('../services/vendas.service');
 
 exports.getVendasController = async (req, res) => {
   try {
@@ -8,6 +9,7 @@ exports.getVendasController = async (req, res) => {
     if (resposta) {
       console.log("Token válido!");
       resultado = await meliService.getVendas(resposta);
+
     } else {
       console.log("Token inválido!");
       const access_token = await meliService.getAuth();
@@ -15,7 +17,7 @@ exports.getVendasController = async (req, res) => {
     }
     
     //essa parte pode ter ficado confusa de ler, mas é para pegar a array de vendas
-    await meliService.salvarVendas(resultado.results);
+    await vendasService.salvarVendas(resultado.results);
     res.status(200).send("Vendas sincronizadas com sucesso!");
   } catch (error) {
     console.error("Erro ao sincronizar vendas:", error);
