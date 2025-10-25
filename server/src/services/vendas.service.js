@@ -157,7 +157,9 @@ const syncVendas = async (accessToken) => {
 
             sku: item.item.seller_sku,
 
-            ml_id: item.item.id
+            ml_id: item.item.id,
+
+            quantidade: item.requested_quantity.value
 
         }))
     );

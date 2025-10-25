@@ -73,8 +73,6 @@ exports.putAnunciosEstoqueController = async (req, res) => {
             //pega as infos da roda com o sku do anuncio
                 const detalhesEstoque = await stockService.getRoda(detalhesAnuncio);
 
-                console.log(detalhesEstoque);
-
                 for (const detalheEstoque of detalhesEstoque){
 
                     if(detalheEstoque.quantidade === null){

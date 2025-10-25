@@ -8,7 +8,10 @@ const salvarAnuncios = async (anuncios) => {
     const isAnuncioUnitario = (titulo) => {
         if (!titulo || typeof titulo !== 'string') return false;
         // Normaliza o título para maiúsculas e remove espaços antes de verificar
-        return titulo.trim().toUpperCase().startsWith('1 U'); 
+         
+            const tituloNormalizado = titulo.trim().toUpperCase();
+            
+            return tituloNormalizado.startsWith('1 U') || tituloNormalizado.startsWith('1 R');
     };
 
     try {
@@ -88,6 +91,40 @@ const getAnuncio = async (id_anuncio) => {
     }
 }
 
+const getAnunciosBySku = async (sku) => {
+    try{
+        let listaMLIDsDoMesmoSku = [];
+
+        //console.log("Capturando anúncio...");
+
+        const arrayAnuncios = await Anuncio.findAll({
+            where: { 
+                sku: sku
+            },
+            raw: true
+         });
+
+
+        for (const anuncio of arrayAnuncios){
+
+            listaMLIDsDoMesmoSku.push({
+                ml_id: anuncio.ml_id,
+                //variation_id: anuncio.sku_id, 
+                //sku: anuncio.sku,
+                //isUnitario: anuncio.isUnitario
+            });
+
+        }
+
+        return (listaMLIDsDoMesmoSku);
+
+    }catch(error){
+        console.error("Erro ao capturar anúncio", error);
+        throw error; // Lança o erro para o controller
+    }
+}
+
+
 const generateUpdatePayload = (detalhesAnuncio, detalhesEstoque) => {
 
     console.log("Gerando payload... ")
@@ -149,5 +186,6 @@ const generateUpdatePayload = (detalhesAnuncio, detalhesEstoque) => {
 module.exports = {
     salvarAnuncios,
     getAnuncio,
-    generateUpdatePayload
+    generateUpdatePayload,
+    getAnunciosBySku
 };

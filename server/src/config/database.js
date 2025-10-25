@@ -2,6 +2,8 @@
 
 const { Sequelize, DataTypes } = require('sequelize');
 const path = require('path');
+const bcrypt = require('bcrypt');
+const SALT_ROUNDS = 10; // Número de rounds para a criptografia
 //require('dotenv').config({ path: path.resolve(__dirname, '..', '..', '.env') });
 
 
@@ -35,6 +37,43 @@ const Venda = sequelize.define('Venda', {
 }, {
     tableName: 'vendas_ml',
     timestamps: false
+});
+
+//tabela de usuarios
+const User = sequelize.define('User', {
+    id: {
+        type: DataTypes.INTEGER,
+        primaryKey: true,
+        autoIncrement: true,
+    },
+    username: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        unique: true // Garante que não haja dois usuários com o mesmo nome
+    },
+    password: {
+        type: DataTypes.STRING, // Tipo ideal para armazenar a hash da senha
+        allowNull: false,
+    }
+}, {
+    tableName: 'users',
+    timestamps: true,
+    hooks: {
+        beforeCreate: async (user) => {
+            if (user.password) {
+                // Gera a hash da senha com o bcrypt
+                const salt = await bcrypt.genSalt(SALT_ROUNDS);
+                user.password = await bcrypt.hash(user.password, salt);
+            }
+        },
+        beforeUpdate: async (user) => {
+            if (user.password) {
+                // Garante que a senha seja criptografada também ao ser atualizada
+                const salt = await bcrypt.genSalt(SALT_ROUNDS);
+                user.password = await bcrypt.hash(user.password, salt);
+            }
+        }
+    } // Use 'true' para ter campos createdAt e updatedAt automáticos
 });
 
 // Modelo para a tabela 'estoque_rodas_distribuidora'
@@ -137,6 +176,7 @@ module.exports = {
     Token,
     Anuncio,
     SyncControl,
+    User,
     syncDb
 };
 

@@ -201,8 +201,6 @@ const saveStock = async (estoque) => {
 
 
 
-
-
             // -- CORREÇÃO ACABAMENTO INCOMPLETO --
 
                 const acabamentoCorrigido = fixAcabamento(roda.ACABAMENTO);
@@ -214,9 +212,6 @@ const saveStock = async (estoque) => {
 
             let aroCorrigido = String(roda.ARO || '');
             
-
-
-
 
 
             // --- CORREÇÃO DO CAMPO ARO (Padronização) ---
@@ -340,7 +335,7 @@ const saveStock = async (estoque) => {
             if (!chavesExistentesSet.has(key)) {
 
                 // Mantém o formato de log solicitado
-                //console.log(`\n[MODELO NOVO DETECTADO] Inserindo: ${registro.modelo} ${registro.aro} ${registro.pcd} ${registro.offset} ${registro.acabamento}`);
+                console.log(`\n[MODELO NOVO DETECTADO] Inserindo: ${registro.modelo} ${registro.aro} ${registro.pcd} ${registro.offset} ${registro.acabamento}`);
                 novosModelos++;
                 return true;
 
@@ -448,17 +443,16 @@ const getRoda = async (detalhesAnuncio) => {
     }
 }
 
-// ========================================================
+// ==============================================================================================================================
 
-const subtrairJogoDeRoda = async (sku) => {
-    // Definimos a quantidade a ser subtraída (1 jogo)
-    const QUANTIDADE_A_SUBTRAIR = 4;
+const subtrairRodasDoEstoque = async (sku, quantidadeABaixar) => {
+
     
     // Usamos uma transação para garantir que a baixa seja atômica
     const transaction = await sequelize.transaction();
     
     try {
-        console.log(`[BAIXA ESTOQUE] Iniciando baixa de 4 unidades para SKU: ${sku}`);
+        console.log(`[BAIXA ESTOQUE] Iniciando baixa de ${quantidadeABaixar} unidades para SKU: ${sku}`);
 
         // 1. Busca os registros para verificar o estoque atual
         const rodas = await Estoque.findAll({
@@ -478,8 +472,8 @@ const subtrairJogoDeRoda = async (sku) => {
             
             const estoqueAtualTotal = roda.qtde_sp + roda.qtde_sc;
             
-            if (estoqueAtualTotal < QUANTIDADE_A_SUBTRAIR) {
-                 console.warn(`[BAIXA ESTOQUE] Estoque insuficiente (${estoqueAtualTotal} unid.) para a baixa de ${QUANTIDADE_A_SUBTRAIR} unid. para SKU: ${sku}.`);
+            if (estoqueAtualTotal < quantidadeABaixar) {
+                 console.warn(`[BAIXA ESTOQUE] Estoque insuficiente (${estoqueAtualTotal} unid.) para a baixa de ${quantidadeABaixar} unid. para SKU: ${sku}.`);
                  // Não lançamos erro, mas pulamos a baixa
                  continue; 
             }
@@ -490,15 +484,16 @@ const subtrairJogoDeRoda = async (sku) => {
             
             // --- LÓGICA DE PRIORIZAÇÃO DA BAIXA ---
             
-            if (roda.qtde_sp >= QUANTIDADE_A_SUBTRAIR) {
-                // REGRA 1: qtde_sp >= 4 -> Diminui 4 unidades de SP.
-                console.log(`[BAIXA ESTOQUE] Baixando 4 unidades do estoque SP.`);
-                novaQtdeSP = roda.qtde_sp - QUANTIDADE_A_SUBTRAIR;
+            if (roda.qtde_sp >= quantidadeABaixar) {
 
-            } else if (roda.qtde_sp > 0 && roda.qtde_sp < QUANTIDADE_A_SUBTRAIR) {
-                // REGRA 2: qtde_sp entre 1 e 3 -> Baixa o que tiver em SP, e o restante de SC.
+                
+                console.log(`[BAIXA ESTOQUE] Baixando ${quantidadeABaixar} unidades do estoque SP.`);
+                novaQtdeSP = roda.qtde_sp - quantidadeABaixar;
+
+            } else if (roda.qtde_sp > 0 && roda.qtde_sp < quantidadeABaixar) {
+
                 const qtdeBaixadaSP = roda.qtde_sp;
-                const qtdeFaltanteSC = QUANTIDADE_A_SUBTRAIR - qtdeBaixadaSP;
+                const qtdeFaltanteSC = quantidadeABaixar - qtdeBaixadaSP;
                 
                 // Baixa de SP
                 novaQtdeSP = 0;
@@ -509,9 +504,11 @@ const subtrairJogoDeRoda = async (sku) => {
                 console.log(`[BAIXA ESTOQUE] Usando ${qtdeBaixadaSP} unid. de SP e ${qtdeFaltanteSC} unid. de SC.`);
 
             } else if (roda.qtde_sp === 0) {
-                // REGRA 3: qtde_sp = 0 -> Baixar as 4 rodas de SC.
+
                 console.log(`[BAIXA ESTOQUE] Usando 4 unidades do estoque SC.`);
-                novaQtdeSC = roda.qtde_sc - QUANTIDADE_A_SUBTRAIR;
+
+                novaQtdeSC = roda.qtde_sc - quantidadeABaixar;
+                
             }
 
             // Garante que a quantidade nunca seja negativa (Embora a checagem inicial ajude)
@@ -542,10 +539,137 @@ const subtrairJogoDeRoda = async (sku) => {
     }
 };
 
+
+// ==============================================================================================================================
+
+const subtrairRodasDeUmAnuncioDuasTalas = async (sku, quantidadeABaixar) => {
+
+    let rodas = [];
+    // Usamos uma transação para garantir que a baixa seja atômica
+    const transaction = await sequelize.transaction();
+    
+    try {
+        console.log(`[BAIXA ESTOQUE] Iniciando baixa de ${quantidadeABaixar/2} unidades para SKU: ${sku}`);
+
+        // 1. Busca os registros para verificar o estoque atual
+        if(sku === 'M08ARO14675-114BD'){
+
+            rodas = rodas.concat(await Estoque.findAll({
+                where: { sku: 'M08ARO1465-114BD' },
+                transaction: transaction,
+                raw: true
+            }));
+
+            rodas = rodas.concat(await Estoque.findAll({
+                where: { sku: 'M08ARO1475-114BD' },
+                transaction: transaction,
+                raw: true
+            }));
+
+        } else if(sku === 'M08ARO14675-114FBD') {
+                    
+
+            rodas = rodas.concat(await Estoque.findAll({
+                where: { sku: 'M08ARO1465-114FBD' },
+                transaction: transaction,
+                raw: true
+            }));
+
+            rodas = rodas.concat(await Estoque.findAll({
+                where: { sku: 'M08ARO1475-114FBD' },
+                transaction: transaction,
+                raw: true
+            }));
+        }
+
+        
+
+
+        if (rodas.length !== 2) {
+            console.warn(`[BAIXA ESTOQUE] SKU '${sku}' não encontrado na tabela de estoque. Nenhuma baixa realizada.`);
+            await transaction.rollback();
+            return;
+        }
+
+        //Iterando na array de rodas, pois temos dentro de um anúncio, vendemos um par de rodas do mesmo modelo mas com talas diferentes
+        for (const roda of rodas) {
+            
+            const estoqueAtualTotal = roda.qtde_sp + roda.qtde_sc;
+            
+            if (estoqueAtualTotal < (quantidadeABaixar/2)) {
+                 console.warn(`[BAIXA ESTOQUE] Estoque insuficiente (${estoqueAtualTotal} unid.) para a baixa de ${quantidadeABaixar/2} unid. para SKU: ${sku}.`);
+                 await transaction.rollback(); // Cancela TUDO se o estoque for insuficiente em uma das talas
+                 return;
+            }
+            
+            // Variáveis que guardarão as novas quantidades
+            let novaQtdeSP = roda.qtde_sp;
+            let novaQtdeSC = roda.qtde_sc;
+            
+            // --- LÓGICA DE PRIORIZAÇÃO DA BAIXA ---
+            
+            if (roda.qtde_sp >= (quantidadeABaixar/2)) {
+
+                
+                console.log(`[BAIXA ESTOQUE] Baixando ${quantidadeABaixar/2} unidades do estoque SP.`);
+                novaQtdeSP = roda.qtde_sp - quantidadeABaixar/2;
+
+            } else if (roda.qtde_sp > 0 && roda.qtde_sp < (quantidadeABaixar/2)) {
+
+                const qtdeBaixadaSP = roda.qtde_sp;
+                const qtdeFaltanteSC = (quantidadeABaixar/2) - qtdeBaixadaSP;
+                
+                // Baixa de SP
+                novaQtdeSP = 0;
+                
+                // Baixa de SC (garantido que qtdeFaltanteSC é > 0 e <= 4)
+                novaQtdeSC = roda.qtde_sc - qtdeFaltanteSC;
+                
+                console.log(`[BAIXA ESTOQUE] Usando ${qtdeBaixadaSP} unid. de SP e ${qtdeFaltanteSC} unid. de SC.`);
+
+            } else if (roda.qtde_sp === 0) {
+
+                console.log(`[BAIXA ESTOQUE] Usando 4 unidades do estoque SC.`);
+
+                novaQtdeSC = roda.qtde_sc - (quantidadeABaixar/2);
+                
+            }
+
+            // Garante que a quantidade nunca seja negativa (Embora a checagem inicial ajude)
+            novaQtdeSP = Math.max(0, novaQtdeSP);
+            novaQtdeSC = Math.max(0, novaQtdeSC);
+            
+            // --- Execução da Atualização ---
+            await Estoque.update(
+                { 
+                    qtde_sp: novaQtdeSP,
+                    qtde_sc: novaQtdeSC
+                },
+                { 
+                    where: { id: roda.id }, 
+                    transaction: transaction 
+                }
+            );
+        }
+        
+        await transaction.commit(); // Confirma a transação
+        
+        console.log(`[BAIXA ESTOQUE] Baixa concluída para SKU: ${sku}. 4 unidades subtraídas (se houvesse estoque).`);
+
+    } catch (error) {
+        await transaction.rollback(); // Desfaz a transação em caso de erro
+        console.error(`Erro fatal durante a baixa de estoque do SKU ${sku}:`, error);
+        throw error;
+    }
+};
+
+
+
 // Exporta as funções para serem usadas no controller
 module.exports = {
     parseTxtToWheels,
     saveStock,
     getRoda,
-    subtrairJogoDeRoda
+    subtrairRodasDoEstoque,
+    subtrairRodasDeUmAnuncioDuasTalas
 };
