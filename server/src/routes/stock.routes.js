@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const upload = multer({ dest: 'uploads/' }); // Define a pasta de destino para os arquivos
+const authMiddleware = require('../middlewares/authMiddleware');
 
 const StockController = require('../controllers/StockController');
 

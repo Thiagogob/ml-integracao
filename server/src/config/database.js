@@ -34,6 +34,18 @@ const Venda = sequelize.define('Venda', {
     valor: { type: DataTypes.REAL(10, 2) },
     comissao: { type: DataTypes.REAL(10, 2) },
     quantidade: {type: DataTypes.INTEGER},
+
+    disponibilidade: {
+        type: DataTypes.ENUM('campinas', 'sul', 'pendencia'),
+        allowNull: true, // Permite NULL
+        // Sem defaultValue
+    },
+
+    coletada: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false // Por padrão, a roda não foi coletada
+    }
 }, {
     tableName: 'vendas_ml',
     timestamps: false
@@ -151,6 +163,13 @@ const SyncControl = sequelize.define('SyncControl', {
 }, {
     tableName: 'sync_control',
     timestamps: false
+});
+
+Venda.belongsTo(Estoque, {
+    foreignKey: 'sku',
+    targetKey: 'sku',
+    as: 'estoque_associado', // Nome da associação para ser usado no 'include'
+    constraints: false // IMPEDE o Sequelize de criar uma FOREIGN KEY no banco de dados
 });
 
 

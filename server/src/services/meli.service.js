@@ -50,11 +50,9 @@ const getAuth = async () => {
 
         console.log("Refresh token novo = ", resposta_json.refresh_token);
 
-        // 3. Atualiza os tokens no banco de dados, usando `run` e parâmetros
-        //const sql = `UPDATE tokens_ml SET refresh_token = ?, access_token = ? WHERE id = 1`;
-        //const params = [resposta_json.refresh_token, resposta_json.access_token];
 
-        //await run(sql, params);
+
+        
         await Token.update(
             { 
                 refresh_token: resposta_json.refresh_token, 

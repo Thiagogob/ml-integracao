@@ -63,9 +63,12 @@ const runSalesSync = async () => {
             //venda que tem um SKU correspondente no estoque da distribuidora 
             if(detalhesRodaQueVendeu.length > 0){
 
+                                
 
                 if(!anuncio.isUnitario){
 
+
+                    await vendasService.preencherDisponibilidade(anuncio.id_venda, anuncio.sku, 4)
                     //Primeiro Atualizar a quantidade disponível no estoque interno da distribuidora
                     if(!SKUs_DUAS_TALAS.includes(anuncio.sku)){
                         await stockService.subtrairRodasDoEstoque(anuncio.sku, anuncio.quantidade * 4);
@@ -77,6 +80,9 @@ const runSalesSync = async () => {
 
                 }
                 else{
+
+
+                    await vendasService.preencherDisponibilidade(anuncio.id_venda, anuncio.sku, 1)
 
                     await stockService.subtrairRodasDoEstoque(anuncio.sku, anuncio.quantidade);
 
