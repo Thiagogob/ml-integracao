@@ -1,7 +1,7 @@
 // src/pages/VendasPage.tsx
 
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../services/api'; // Seu cliente Axios seguro
 import { logout } from '../services/authService';
 
@@ -23,10 +23,16 @@ interface Venda {
 
 const VendasPage: React.FC = () => {
     const navigate = useNavigate();
+    const [searchParams, setSearchParams] = useSearchParams();
+
+
     const [vendas, setVendas] = useState<Venda[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [rawVendas, setRawVendas] = useState<Venda[]>([]);
     
+
+    const view = searchParams.get('view') || 'coleta';
 
     // Função para buscar dados
     useEffect(() => {
@@ -37,9 +43,9 @@ const VendasPage: React.FC = () => {
                 // Chama o endpoint do backend. 
                 // Assumindo que o endpoint continua sendo /sales/listarVendas
                 const response = await api.get('/vendas/listarVendas'); 
-                
+                setRawVendas(response.data);
                 // Se a API retornar o array diretamente:
-                setVendas(response.data);
+                //setVendas(response.data);
                 
             } catch (err: any) {
                 // Lidar com falha de autenticação (token expirado)
@@ -56,7 +62,33 @@ const VendasPage: React.FC = () => {
 
         fetchSales();
     }, [navigate]);
+
+
+const vendasExibidas = useMemo(() => {
+        if (view === 'pendencia') {
+            return rawVendas.filter(v => v.disponibilidade === 'pendencia');
+        } 
+        
+        // Coleta (Padrão): Pronta Entrega, Sul, e Status Indefinido (NULL)
+        return rawVendas.filter(v => 
+            v.disponibilidade === 'campinas' || v.disponibilidade === 'sul' || v.disponibilidade === null
+        );
+    }, [rawVendas, view]);
     
+
+    // --- 3. FUNÇÕES DE NAVEGAÇÃO DOS BOTÕES ---
+const setView = (newView: 'coleta' | 'pendencia') => {
+        if (newView === 'pendencia') {
+            setSearchParams({ view: 'pendencia' });
+        } else {
+            setSearchParams({});
+        }
+    };
+
+const handleViewToggle = () => {
+        const nextView = view === 'coleta' ? 'pendencia' : 'coleta';
+        setView(nextView);
+    };
 
 const getEstoqueIndicator = (venda: Venda) => {
     switch (venda.disponibilidade) {
@@ -88,14 +120,14 @@ const getEstoqueIndicator = (venda: Venda) => {
 };
 
 
-const handleMarcarComoColetado = async (vendaId: string) => {
+const handleMarcarComoColetado = async (vendaId: string, setVendas: any, setError: any) => {
     try {
         // 1. 🎯 Chamada à API para alterar o status no DB
         // (PUT para atualizar o recurso)
         await api.put(`/vendas/coletado/${vendaId}`); 
         
         // 2. Atualizar o estado local (otimista) para REMOVER o item da lista
-        setVendas(prevVendas => prevVendas.filter(venda => venda.id_venda !== vendaId));
+       setVendas((prevVendas: Venda[]) => prevVendas.filter(venda => venda.id_venda !== vendaId));
         
         console.log(`Venda ID: ${vendaId} marcada como coletada e removida da lista.`);
 
@@ -127,26 +159,41 @@ const handleMarcarComoColetado = async (vendaId: string) => {
     }
 
     // --- Renderização Principal ---
-    return (
-        <div className="min-h-screen bg-gray-900 text-white p-8">
+ return (
+<div className="min-h-screen bg-gray-900 text-white p-8">
             <header className="flex justify-between items-center mb-10 border-b border-gray-700 pb-4">
-                <h1 className="text-4xl font-bold text-indigo-400">📊 Lista de Rodas para Coleta</h1>
-                <button
-                    onClick={handleGoBack}
-                    className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm font-semibold transition"
-                >
-                    &larr; Voltar ao Dashboard
-                </button>
+                <h1 className="text-4xl font-bold text-indigo-400">
+                    {view === 'coleta' ? '📦 Lista de Coleta' : '❌ Lista de Pendências'}
+                </h1>
+                <div className="flex space-x-4">
+                    
+                    
+                    <button
+                        onClick={handleViewToggle}
+                        // O estilo do botão é baseado no destino (pendência é vermelho, coleta é indigo/padrão)
+                        className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${view === 'coleta' ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'}`}
+                    >
+                        {/* O texto mostra o que será exibido se ele for clicado */}
+                        {view === 'coleta' ? 'Listar Pendências' : 'Listar Rodas para Coleta'}
+                    </button>
+                    
+                    <button
+                        onClick={() => handleGoBack()} // Usando a chamada correta para a função
+                        className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm font-semibold transition"
+                    >
+                        &larr; Voltar
+                    </button>
+                </div>
             </header>
 
-            {/* Exibição de Erros */}
             {error && <div className="bg-red-900 text-red-300 p-3 rounded mb-4">{error}</div>}
 
-<div className="space-y-4"> {/* Usa space-y-4 para separar as cards */}
-                {vendas.length === 0 ? (
-                    <p className="text-center text-gray-400">Nenhuma venda pendente de separação.</p>
+            <div className="space-y-4"> {/* Usa space-y-4 para separar as cards */}
+
+                {vendasExibidas.length === 0 ? (
+                    <p className="text-center text-gray-400">Nenhuma venda com pendência de estoque.</p>
                 ) : (
-                    vendas.map((venda) => {
+                    vendasExibidas.map((venda) => {
                         const indicator = getEstoqueIndicator(venda);
                         return (
                             <div 
@@ -155,16 +202,17 @@ const handleMarcarComoColetado = async (vendaId: string) => {
                             >
                                 {/* Bloco Esquerdo: Detalhes da Venda */}
                                 <div className="flex-1 min-w-0">
-                                    <p className="text-sm text-gray-400">ID Venda ML: <span className="font-semibold text-indigo-400">{venda.id_venda}</span></p>
-                                    <p className="text-sm text-gray-400">ID Anúncio: <span className="font-semibold text-indigo-400">{venda.id_ml}</span></p>
+                                    <p className="text-sm text-gray-400">
+                                        ID do anúncio: <span className="font-semibold text-gray-300">{venda.id_ml}</span>
+                                    </p>
+                                    <p className="text-sm text-gray-400">
+                                        Pedido ID: <span className="font-semibold text-indigo-400">{venda.id_venda}</span>
+                                    </p>
                                     <h3 className="text-xl font-bold truncate text-white mt-1">
                                         {venda.sku} <span className="text-base font-normal text-gray-400">({venda.quantidade} Un.)</span>
                                     </h3>
                                     
-                                    
-                                    
-                                    
-                                    {/* Indicação de Estoque (Pronta Entrega vs Solicitar Sul) */}
+                                    {/* Indicação de Estoque */}
                                     <span 
                                         className={`mt-2 inline-block px-3 py-1 text-xs font-semibold rounded-full text-white ${indicator.color}`}
                                     >
@@ -177,13 +225,20 @@ const handleMarcarComoColetado = async (vendaId: string) => {
                                     <p className="text-2xl font-bold text-green-400">{formatCurrency(venda.valor)}</p>
                                     <p className="text-sm text-red-400">Comissão: {formatCurrency(venda.comissao)}</p>
                                     
-                                    {/* Checkbox de Despache (To-Do) */}
-                                    <button
-                                        onClick={() => handleMarcarComoColetado(venda.id_venda)}
-                                        className="mt-3 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-semibold transition flex items-center"
-                                    >
-                                        ✅ Marcar como Coletado
-                                    </button>
+                                    {/* 🎯 BOTÃO DE AÇÃO */}
+                                    {view === 'coleta' ? (
+                                        <button
+                                            onClick={() => handleMarcarComoColetado(venda.id_venda, setRawVendas, setError)}
+                                            className="mt-3 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-semibold transition flex items-center"
+                                        >
+                                            ✅ Marcar como Coletado
+                                        </button>
+                                    ) : (
+                                        // Ações específicas para "Pendência" (ex: tentar reprocessar, editar)
+                                        <span className="mt-3 px-4 py-2 text-sm text-gray-400 border border-gray-600 rounded-lg">
+                                            Aguardando Estoque
+                                        </span>
+                                    )}
                                 </div>
                             </div>
                         );

@@ -3,38 +3,8 @@ const { Sequelize } = require('sequelize');
 const syncControlService = require('./syncControl.service');
 const meliService = require('./meli.service');
 const { listarVendas } = require('../controllers/VendasController');
+const { Op, fn, col, literal } = require('sequelize');
 
-//const salvarVendas = async (vendas) => {
-//    let vendasSalvas = 0;
-//    try{
-//        console.log("Iniciando o salvamento de vendas no banco de dados...");
-//
-//    for (const venda of vendas) {
-//        
-//
-//                            
-//            await Venda.create({
-//                    data: venda.date_closed,
-//                    id_venda: venda.id, 
-//                    id_ml: venda.order_items[0].item.id,
-//                    sku: venda.order_items[0].item.seller_sku,
-//                    valor: venda.order_items[0].unit_price,
-//                    comissao: venda.order_items[0].sale_fee,
-//                    quantidade: venda.order_items[0].requested_quantity.value
-//                });
-//
-//             vendasSalvas++;
-//
-//
-//        
-//    }
-//    console.log(`Dados de ${vendasSalvas} vendas salvas no banco de dados.`);
-//    } catch(error){
-//         console.error('Erro ao salvar as vendas:', error);
-//            throw error; // Lança o erro para que o controller o capture
-//    }
-//        
-//};
 
 const marcarComoColetada = async (idVenda) => {
     try {
@@ -56,6 +26,130 @@ const marcarComoColetada = async (idVenda) => {
             throw new Error(`Falha ao atualizar status de coleta: ${error.message}`);
         }
 }
+
+
+
+
+const getTop5RodasVendidas = async () => {
+    const quinzeDiasAtras = new Date();
+        quinzeDiasAtras.setDate(quinzeDiasAtras.getDate() - 15);
+        
+        try {
+            const topVendas = await Venda.findAll({
+                attributes: [
+                    // Agrega e soma a quantidade vendida
+                    ['sku', 'sku'],
+                    [fn('SUM', col('quantidade')), 'total_vendido']
+                ],
+
+                include: [{
+                    model: Estoque,
+                    as: 'estoque_associado', // Use o alias definido no database.js
+                    attributes: [],          // Não precisamos das colunas do Estoque
+                    required: true           // FORÇA INNER JOIN: Filtra SÓ SKUs que estão no Estoque
+                }],
+
+                where: {
+
+                    data: {
+                        [Op.gte]: quinzeDiasAtras.toISOString() 
+                    }
+                },
+                group: ['Venda.sku', 'estoque_associado.id'], // Agrupa os resultados pelo SKU
+                order: [[literal('total_vendido'), 'DESC']], // Ordena pela maior quantidade
+                limit: 5, // Limita aos 5 primeiros
+                raw: true, // Retorna objetos JSON simples para fácil mapeamento
+            });
+            
+            // Mapeamento opcional para garantir que 'total_vendido' seja um número inteiro
+            return topVendas.map(item => ({
+                sku: item.sku,
+                total_vendido: parseInt(item.total_vendido, 10) // Converte para número
+            }));
+
+        } catch (error) {
+            console.error('[VendasService] Erro ao buscar Top 5 Vendas:', error);
+            throw new Error('Falha ao calcular o Top 5 de vendas.');
+        }
+}
+
+
+const getRodasAtencao = async () =>{
+    const quinzeDiasAtras = new Date();
+        quinzeDiasAtras.setDate(quinzeDiasAtras.getDate() - 15);
+        
+        try {
+            
+const indiceAtencaoLiteral = literal(`
+    COALESCE(
+        CAST(SUM("Venda"."quantidade") AS NUMERIC) 
+        / NULLIF(("estoque_associado"."qtde_sp" + "estoque_associado"."qtde_sc" + "estoque_associado"."qtde_pr"), 0), 
+        0
+    )
+`);
+            
+            const topAtencao = await Venda.findAll({
+                attributes: [
+                    ['sku', 'sku'],
+                    [fn('SUM', col('quantidade')), 'total_pedidos_15dias'], // Contagem de pedidos (venda.quantidade)
+                    [col('estoque_associado.qtde_sp'), 'qtde_sp_atual'],
+                    [col('estoque_associado.qtde_sc'), 'qtde_sc_atual'],
+                    [col('estoque_associado.qtde_pr'), 'qtde_pr_atual'],
+                    [indiceAtencaoLiteral, 'indice_atencao'] // O resultado da divisão
+                ],
+                
+                // Filtro 1: Apenas Rodas (INNER JOIN com Estoque)
+                include: [{
+                    model: Estoque,
+                    as: 'estoque_associado', 
+                    attributes: [],          
+                    required: true           
+                }],
+                
+                where: {
+                    // Filtro 2: Apenas vendas dos últimos 15 dias
+                    data: {
+                        [Op.gte]: quinzeDiasAtras.toISOString() 
+                    }
+                },
+                
+                // Agrupamos por SKU e pelas quantidades de Estoque (que são estáticas para o SKU)
+                group: [
+                    'Venda.sku', 
+                    'estoque_associado.id',
+                    'estoque_associado.qtde_sp',
+                    'estoque_associado.qtde_sc',
+                    'estoque_associado.qtde_pr',
+                    'Venda.sku'
+                ],
+                
+                order: [
+                    // 1. Primário: Ordenar pelo Índice de Risco (Maior -> Menor)
+                    [literal('indice_atencao'), 'DESC'], 
+                    
+                    // 2. Secundário: Ordenar pelo Total de Pedidos (Maior -> Menor)
+                    [literal('total_pedidos_15dias'), 'DESC'] 
+                ], 
+                limit: 5, 
+                raw: true, 
+            });
+            
+            // Mapeamento para garantir que o índice seja um float e limitar casas decimais
+            return topAtencao.map(item => ({
+                sku: item.sku,
+                total_pedidos_15dias: parseInt(item.total_pedidos_15dias, 10),
+                qtde_estoque_total: (item.qtde_sp_atual || 0) + (item.qtde_sc_atual || 0) + (item.qtde_pr_atual || 0),
+                indice_atencao: parseFloat(item.indice_atencao).toFixed(2) // 2 casas decimais
+            }));
+
+        } catch (error) {
+            console.error('[VendasService] Erro ao buscar Top 5 Rodas que precisam de atenção:', error);
+            throw new Error('Falha ao calcular o Índice de Risco de Estoque.');
+        }
+    }
+
+
+
 
 
 const listarTodasAsVendas = async () => {
@@ -151,7 +245,7 @@ const preencherDisponibilidade = async (idVenda, sku, quantidadeNecessaria) => {
         try {
             // 1. Acesso ao Estoque da Roda
             const estoque = await Estoque.findOne({
-                attributes: ['qtde_sp', 'qtde_sc'],
+                attributes: ['qtde_sp', 'qtde_sc', 'qtde_pr'],
                 where: { sku: sku }
             });
 
@@ -162,7 +256,9 @@ const preencherDisponibilidade = async (idVenda, sku, quantidadeNecessaria) => {
             } else {
                 const qtdeSP = estoque.qtde_sp;
                 const qtdeSC = estoque.qtde_sc;
-                const qtdeTotal = qtdeSP + qtdeSC;
+                const qtdePR = estoque.qtde_pr;
+
+                const qtdeTotal = qtdeSP + qtdeSC + qtdePR;
                 
                 // 2. Lógica de Verificação de Estoque
                 
@@ -176,7 +272,7 @@ const preencherDisponibilidade = async (idVenda, sku, quantidadeNecessaria) => {
                 
                 } else {
                     // 3. Estoque Insuficiente (total)
-                    novoStatus = 'pendência';
+                    novoStatus = 'pendencia';
                 }
             }
             
@@ -332,62 +428,85 @@ const syncVendas = async (accessToken) => {
 };
 
 
+const countDailyRodasVendidas = async() => {
+    // 1. Calcular início e fim do dia atual
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+
+    const endOfToday = new Date();
+    endOfToday.setHours(23, 59, 59, 999);
+
+    let rodasVendidasCount = 0;
+    const validRodasSkuCache = new Set(); 
+
+    try {
+        
+        // 2. CONSULTA SIMPLES: Buscar todas as vendas do dia (Sem JOIN)
+        const vendasDoDia = await Venda.findAll({
+            attributes: ['id', 'sku', 'id_venda', 'data'], // Incluindo 'id_venda' e 'data' para o log
+            where: {
+                data: {
+                    [Op.between]: [startOfToday, endOfToday]
+                }
+            },
+            raw: true
+        });
+
+        if (vendasDoDia.length === 0) {
+            return 0;
+        }
+
+        
+        // 3. PROCESSAMENTO EM NODE.JS E VERIFICAÇÃO DE ESTOQUE
+        
+        for (const venda of vendasDoDia) {
+            const sku = venda.sku;
+
+            // Otimização: Se o SKU já foi verificado e é válido, apenas contabiliza
+            if (validRodasSkuCache.has(sku)) {
+                
+                
+                rodasVendidasCount++;
+                continue;
+            }
+
+            // 4. VERIFICAR CORRESPONDÊNCIA NA TABELA ESTOQUE
+            const existeEstoque = await Estoque.findOne({
+                attributes: ['sku'], 
+                where: { sku: sku },
+                raw: true
+            });
+
+            if (existeEstoque) {
+                // Se for um SKU de roda, adiciona ao cache e contabiliza
+                validRodasSkuCache.add(sku);
+                rodasVendidasCount++;
+                
+
+            }
+            
+            // Se não existir, o loop continua (não é uma venda de roda)
+        }
+        
+        
+        return rodasVendidasCount;
+
+    } catch (error) {
+        console.error('[VendasService] Erro fatal durante a contagem de rodas vendidas:', error);
+        return 0; 
+    }
+}
+
+
 module.exports = {
   salvarVendas,
   getVendasFromDatabase,
   syncVendas,
   listarTodasAsVendas,
   preencherDisponibilidade,
-  marcarComoColetada
+  marcarComoColetada,
+  getTop5RodasVendidas,
+  getRodasAtencao,
+  countDailyRodasVendidas
 };
 
-//const { Venda } = require('../config/database'); 
-//
-//const salvarVendas = async (vendas) => {
-//    try {
-//        console.log("Iniciando o salvamento de vendas no banco de dados...");
-//
-//        let registrosParaInserir = [];
-//
-//        // 1. Prepara a lista de registros para inserção em lote
-//        for (const venda of vendas) {
-//            
-//            // Assumimos que o SKU e outros detalhes estão no primeiro item do pedido
-//            if (venda.order_items && venda.order_items.length > 0) {
-//                const itemVendido = venda.order_items[0];
-//
-//                // Mapeia para o formato do Modelo Venda
-//                registrosParaInserir.push({
-//                    data: venda.date_closed,
-//                    id_venda: venda.id, // ID do pedido (UNIQUE)
-//                    id_ml: itemVendido.item.id, // ID do item/anúncio do ML
-//                    sku: itemVendido.item.seller_sku,
-//                    valor: itemVendido.unit_price,
-//                    comissao: itemVendido.sale_fee,
-//                    quantidade: itemVendido.requested_quantity.value
-//                });
-//            }
-//        }
-//        
-//        // 2. Execução em Lote com `ignoreDuplicates`
-//        if (registrosParaInserir.length > 0) {
-//            
-//            // O PostgreSQL tentará inserir todos. Se houver violação de unicidade (id_venda), 
-//            // ele simplesmente ignora a linha e continua.
-//            const novosRegistros = await Venda.bulkCreate(registrosParaInserir, {
-//                ignoreDuplicates: true,
-//                returning: false // Não precisamos que ele retorne os objetos criados
-//            });
-//            
-//            const vendasSalvas = novosRegistros.length;
-//            console.log(`Dados de ${vendasSalvas} novas vendas salvas no banco de dados.`);
-//            
-//        } else {
-//            console.log("Nenhuma venda para processar.");
-//        }
-//
-//    } catch (error) {
-//        console.error('Erro fatal ao salvar as vendas:', error);
-//        throw error; // Lança o erro para que o scheduler o capture
-//    }
-//};

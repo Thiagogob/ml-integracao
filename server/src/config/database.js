@@ -102,6 +102,9 @@ const Estoque = sequelize.define('Estoque', {
     acabamento: { type: DataTypes.TEXT },
     qtde_sp: { type: DataTypes.INTEGER },
     qtde_sc: { type: DataTypes.INTEGER },
+    qtde_pr: { 
+        type: DataTypes.INTEGER
+     },
     sku: { type: DataTypes.TEXT },
 }, {
     tableName: 'estoque_rodas_distribuidora',
@@ -114,6 +117,34 @@ const Estoque = sequelize.define('Estoque', {
     }
     ]
 });
+
+
+const EstoqueTemporario = sequelize.define('EstoqueTemporario', {
+    id: {
+        type: DataTypes.INTEGER,
+        primaryKey: true,
+        autoIncrement: true,
+    },
+    modelo: { type: DataTypes.TEXT },
+    aro: { type: DataTypes.TEXT },
+    pcd: { type: DataTypes.TEXT },
+    offset: { type: DataTypes.TEXT },
+    acabamento: { type: DataTypes.TEXT },
+    qtde_pr: { type: DataTypes.INTEGER }, // Quantidade no Paraná
+    qtde_sc: { type: DataTypes.INTEGER }, // Quantidade em Santa Catarina
+    sku: { type: DataTypes.TEXT }, // Preenchido posteriormente
+}, {
+    tableName: 'estoque_temporario',
+    timestamps: false,
+    indexes: [
+    {
+        unique: true,
+        fields: ['modelo', 'aro', 'pcd', 'offset', 'acabamento']
+    }
+    ]
+});
+
+
 
 // Modelo para a tabela 'tokens_ml'
 const Token = sequelize.define('Token', {
@@ -192,6 +223,7 @@ module.exports = {
     sequelize,
     Venda,
     Estoque,
+    EstoqueTemporario,
     Token,
     Anuncio,
     SyncControl,

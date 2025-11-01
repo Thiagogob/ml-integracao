@@ -28,3 +28,43 @@ exports.uploadStockController = async (req, res) => {
         return res.status(500).json({ error: 'Falha ao processar o arquivo.' });
     }
 };
+
+
+exports.uploadStockSulController = async (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
+    }
+
+    try {
+        const fileBuffer = fs.readFileSync(req.file.path);
+        
+        
+        // 1. Delega a tarefa de processar o PDF (texto puro)
+        const cleanText = await pdfService.parsePdf(fileBuffer);
+        
+        
+
+        // 2. Delega a tarefa de transformar o texto em um objeto usando o NOVO PARSER
+        const rodas = stockService.parseTxtToWheelsSul(cleanText);
+
+        
+
+        // 3. Salva os dados na tabela TEMPORÁRIA
+        await stockService.saveStockSul(rodas);
+
+
+        //4. Gera correspondencia entre os codigos que se diferem no sul e SP
+        await stockService.normalizeModelCodes();
+
+        
+
+        await stockService.mergeStockPrFromTemporary();
+
+        // 4. Envia a resposta final
+        return res.json({ message: "Estoque do Sul processado e salvo na tabela temporária para análise!"});
+
+    } catch (err) {
+        console.error(err);
+        return res.status(500).json({ error: 'Falha ao processar o arquivo de estoque do Sul.' });
+    }
+};

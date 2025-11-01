@@ -1,12 +1,28 @@
 import React, { useState, useEffect } from 'react';
 import { logout } from '../services/authService'; // Para a função de logout
 import { useNavigate } from 'react-router-dom';
+import Top5Card from '../components/ui/Top5Card';
 import api from '../services/api'; // Seu cliente Axios seguro
+import AtencaoCard from '../components/ui/AtencaoCard';
 
 interface DashboardData {
-    totalAnuncios: number;
+    rodasVendidasDia: number;
     totalRodasEmEstoque: number;
     ultimaSincronizacao: string;
+    top5Vendas: TopVenda[];
+    top5Atencao: AtencaoRodas[];
+}
+
+interface TopVenda {
+    sku: string;
+    total_vendido: number;
+}
+
+interface AtencaoRodas {
+    sku: string;
+    total_pedidos_15dias: number;
+    qtde_estoque_total: number;
+    indice_atencao: string; // Vem como string formatada do backend
 }
 
 const DashboardPage: React.FC = () => {
@@ -77,12 +93,25 @@ const DashboardPage: React.FC = () => {
             {error && <div className="bg-red-900 text-red-300 p-3 rounded mb-4">{error}</div>}
 
             {data ? (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
                     {/* Exemplo de Cartão de Dados */}
-                    <DashboardCard title="Rodas anunciadas" value={data.totalAnuncios} />
+                    <DashboardCard title="Vendas de roda no dia" value={data.rodasVendidasDia} />
                     <DashboardCard title="Quantidade de rodas em Estoque" value={data.totalRodasEmEstoque} />
                     <DashboardCard title="Horário da última venda" value={data.ultimaSincronizacao} isDate={true} />
                 </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {/* Exemplo de Cartão de Dados */}
+                    {data.top5Vendas && <Top5Card data={data.top5Vendas} />}
+                </div>
+
+                {data.top5Atencao && data.top5Atencao.length > 0 && (
+            <div className="mt-8"> {/* Adiciona espaço superior */}
+                <AtencaoCard data={data.top5Atencao} />
+            </div>
+        )}
+                </>
             ) : (
                 <p className="text-center text-gray-400">Nenhum dado disponível.</p>
             )}
