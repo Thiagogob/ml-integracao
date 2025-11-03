@@ -2,7 +2,6 @@
 node_modules
 uploads
 arrayDiferente.js
-arrayMedo.js
 arrayMultiplosSkus.js
 mercado_livre_estoque.db
 query-skus.sql
