@@ -1,4 +1,3 @@
-// /server/src/services/syncControl.service.js
 
 const { SyncControl } = require('../config/database');
 const { Op } = require('sequelize');
@@ -12,6 +11,7 @@ const CHECKPOINT_ID = 'last_sale_sync';
  */
 const getCheckpoint = async () => {
     try {
+
         // Busca o registro onde a chave é 'last_sale_sync'
         const controlRecord = await SyncControl.findByPk(CHECKPOINT_ID);
         
@@ -20,12 +20,10 @@ const getCheckpoint = async () => {
             return controlRecord.last_timestamp.toISOString();
         }
 
-        // Se o registro não existe ou o timestamp é nulo, retorna null
         return null; 
 
     } catch (error) {
         console.error(`Erro ao buscar o checkpoint de sincronização: ${error.message}`);
-        // Em caso de erro no DB, é mais seguro retornar null para buscar TODAS as vendas
         return null; 
     }
 };

@@ -55,7 +55,6 @@ function parseTxtToWheelsSul(text) {
     const lines = text.trim().split('\n');
     const results = [];
 
-    // Seu RegEx original (captura 7 grupos antes das quantidades e as 2 quantidades)
     const pattern = /(\S+)\s+([\dXx,\.]+)\s+([\dXx\/-]+)\s+(-?\d{1,3})\s+(.*?)\s+(\d+)\s+(\d+)$/;
 
     for (const line of lines) {
@@ -71,8 +70,8 @@ function parseTxtToWheelsSul(text) {
                 pcd, 
                 offset, 
                 acabamento, 
-                qtde_pr_str, // 🎯 O SEU '6' (Paraná)
-                qtde_sc_str  // 🎯 O SEU '0' (Santa Catarina)
+                qtde_pr_str, 
+                qtde_sc_str  
             ] = match;
 
             results.push({
@@ -81,9 +80,9 @@ function parseTxtToWheelsSul(text) {
                 pcd: pcd.trim(),
                 offset: offset.trim(),
                 acabamento: acabamento.trim(),
-                qtde_pr: parseInt(qtde_pr_str, 10), // Converte a string do Paraná para INT
-                qtde_sc: parseInt(qtde_sc_str, 10), // Converte a string de SC para INT
-                sku: null // Será preenchido na etapa de matching posterior
+                qtde_pr: parseInt(qtde_pr_str, 10),
+                qtde_sc: parseInt(qtde_sc_str, 10), 
+                sku: null 
             });
         } else {
             console.warn(`Linha ignorada (não corresponde ao padrão): "${line}"`);
@@ -96,7 +95,6 @@ function parseTxtToWheelsSul(text) {
 
 //============================== SALVAR ESTOQUE TEMPORÁRIO ATUALIZANDO AS QUANTIDADES E IGNORANDO SKU=========================================
 
-//const saveStock = async (estoque)
 
 
 const saveStockSul = async (estoque) => {
@@ -112,7 +110,8 @@ const saveStockSul = async (estoque) => {
     try {
         console.log("Iniciando a sincronização inteligente de estoque TEMPORÁRIO do Sul...");
         
-        // 🎯 1. LIMPEZA DA TABELA TEMPORÁRIA (Para análise do arquivo mais recente)
+        // 1. LIMPEZA DA TABELA TEMPORÁRIA 
+        
         console.log('Limpando o Estoque Temporário antes da nova inserção...');
         await EstoqueTemporario.destroy({ where: {}, transaction: transaction });
         console.log('Estoque Temporário limpo com sucesso.');
@@ -120,8 +119,8 @@ const saveStockSul = async (estoque) => {
         // 2. PREPARAÇÃO DOS DADOS: Cria a lista de objetos para o Upsert
         const registrosParaUpsert = estoque.map((roda, index) => {
 
-            // --- APLICAÇÃO DA SUA LÓGICA DE NORMALIZAÇÃO ---
-            const nomeModeloCorrigido = fixModelName(roda.modelo); // Assumo que os nomes são minúsculos aqui
+            // --- LÓGICA DE NORMALIZAÇÃO ---
+            const nomeModeloCorrigido = fixModelName(roda.modelo); 
             const acabamentoCorrigido = fixAcabamento(roda.acabamento);
             let aroCorrigido = String(roda.aro || '');
             
@@ -132,13 +131,13 @@ const saveStockSul = async (estoque) => {
             // Normaliza cada campo da chave composta
             const modelo = normalizeString(nomeModeloCorrigido);
             const aro = normalizeString(aroCorrigido); 
-            const pcd = normalizeString(roda.pcd); // Uso normalizeCorrection se for o seu helper para pcd
+            const pcd = normalizeString(roda.pcd); 
             const offset = normalizeString(roda.offset);
             const acabamento = normalizeString(acabamentoCorrigido);
 
             const unique_key = `${modelo}|${aro}|${pcd}|${offset}|${acabamento}`;
 
-            // --- FIM DA SUA LÓGICA DE NORMALIZAÇÃO ---
+            // --- FIM DA LÓGICA DE NORMALIZAÇÃO ---
 
 
             return {
@@ -148,9 +147,9 @@ const saveStockSul = async (estoque) => {
                 offset: offset,
                 acabamento: acabamento,
                 
-                sku: null, // 🎯 Deixamos NULL para ser preenchido na etapa de Matching
+                sku: null, 
                 
-                // 🎯 Colunas do Novo Estoque
+                
                 qtde_pr: roda.qtde_pr, 
                 qtde_sc: roda.qtde_sc, 
                 
@@ -158,9 +157,7 @@ const saveStockSul = async (estoque) => {
             };
         });
         
-        // 3. UPSERT EM LOTE (Apenas insere/atualiza com os dados do novo PDF)
-        // O pré-check e a lógica de novosModelos não são estritamente necessários
-        // em uma tabela temporária limpa, mas o bulkCreate garante a inserção em lote.
+        // 3. UPSERT EM LOTE 
 
         await EstoqueTemporario.bulkCreate(registrosParaUpsert, {
             updateOnDuplicate: [
@@ -201,7 +198,7 @@ const fixModelName = (modelName) => {
     switch (name) {
         case 'morga':
         case 'morg':
-            return 'morgan'; // Retorna o nome completo e correto
+            return 'morgan'; 
         
         case 'orbita':
             return 'orbital';
@@ -235,7 +232,7 @@ const fixModelName = (modelName) => {
 
 
         default:
-            return name; // Retorna o nome original se não for um caso conhecido
+            return name; 
     }
 };
 
@@ -248,11 +245,10 @@ const fixAcabamento = (acabamento) => {
     switch (name) {
         
         case 'gbbd (grafite brilho':
-            return 'gbbd (grafite brilho borda'; // Retorna o nome completo e correto
-        
+            return 'gbbd (grafite brilho borda'; 
 
         default:
-            return name; // Retorna o nome original se não for um caso conhecido
+            return name; 
     }
 };
 
@@ -537,7 +533,6 @@ const normalizeModelCodes = async () => {
                     }
 
                     if (sourceModel === 'g37') {
-                        // Aplica o valor que o modelo de destino (ballina) possui
                         offsetCorrigido = '38';
                         console.log(`[Normalize] Corrigindo offset 38 para correspondência do modelo ${targetModel}.`);
                     }
@@ -549,7 +544,6 @@ const normalizeModelCodes = async () => {
                     }
 
                     if (sourceModel === 'g37' && acabamentoParaBusca === 'ouro (ouro velho)') {
-                        // Aplica o valor que o modelo de destino (ballina) possui
                         acabamentoParaBusca = 'ovf (ouro velho fosco)'
                         console.log(`[Normalize] Corrigindo acabamento ouro (ouro velho) para correspondência do modelo ${targetModel}.`);
                     }
@@ -693,7 +687,6 @@ const mergeStockPrFromTemporary = async () => {
         for (const tempRoda of registrosTemporarios) {
             
             // 3. Normalizamos os campos para encontrar a correspondência (Match)
-            // ⚠️ ATENÇÃO: As normalizações devem ser idênticas às usadas na função saveStock principal!
             const modelo = normalizeString(tempRoda.modelo);
             const aro = normalizeString(tempRoda.aro); 
             const pcd = normalizeString(tempRoda.pcd);
@@ -715,7 +708,7 @@ const mergeStockPrFromTemporary = async () => {
 
             // 5. Executamos o UPDATE no Estoque principal (apenas para a linha que corresponde)
             const [updatedRows] = await Estoque.update(
-                { qtde_pr: tempRoda.qtde_pr }, // 🎯 Novo valor de qtde_pr
+                { qtde_pr: tempRoda.qtde_pr }, 
                 { 
                     where: matchCondition,
                     transaction: transaction
