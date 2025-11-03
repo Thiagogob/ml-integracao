@@ -4,7 +4,7 @@ const stockService = require('../services/stock.service');
 const { run, all } = require('../config/database');
 
 
-//
+
 exports.getAnunciosSkusController = async (req, res) => {
     let access_token;
     try{
@@ -22,14 +22,6 @@ exports.getAnunciosSkusController = async (req, res) => {
         
         const anuncios = await meliService.getDetalhesAnuncios(anunciosId.results, access_token)
         
-        
-        //salvarAnuncios(anuncios.results);
-
-        //anuncios.forEach(anuncio => {
-        //    console.log(anuncio);
-        //});
-        //console.log(anuncios[0].title);
-        //console.dir(anuncios, { depth: null });
 
         anuncioService.salvarAnuncios(anuncios);
 
@@ -92,13 +84,7 @@ exports.putAnunciosEstoqueController = async (req, res) => {
                 }
                 
             }
-            //console.log(detalhesEstoque);
 
-            //const updatePayload = anuncioService.generateUpdatePayload(detalhesAnuncio, detalhesEstoque)
-
-            //console.log(updatePayload);
-
-            //await meliService.updateEstoqueAnuncio(detalhesAnuncio, access_token, updatePayload)
 
             res.status(200).send("Estoque do anúncio atualizado com sucesso!");
         }

@@ -32,10 +32,7 @@ const salvarAnuncios = async (anuncios) => {
             const isUnitarioValue = isAnuncioUnitario(anuncio.titulo);
             // Itera sobre cada SKU dentro do anúncio
             for (const skuData of anuncio.skus) {
-                //const sql = `
-                //    INSERT INTO anuncios (ml_id, titulo, marca, sku_id, sku, quantidade, categoria)
-                //    VALUES (?, ?, ?, ?, ?, ?, ?)
-                //`;
+
                 const novoRegistro = {
                     ml_id: anuncio.id,
                     titulo: anuncio.titulo,

@@ -144,10 +144,7 @@ const getVendas = async (access_token) => {
         // Constrói a URL com os parâmetros de paginação
         const url = `https://api.mercadolibre.com/orders/search?seller=${SELLER_ID}&order.date_created.from=${formattedStart}&order.date_created.to=${formattedEnd}&offset=${offset}&limit=${limit}`;
         
-        //console.log("URL da Requisição:", url);
-
-        //console.log(`PAGINACAO: Offset=${offset}, Limit=${limit}. Total Esperado=${totalVendasApi}`);
-        //console.log("URL da Requisição:", url);
+   
 
         try {
             const resposta = await fetch(url, {
@@ -162,9 +159,6 @@ const getVendas = async (access_token) => {
 
             const resposta_json = await resposta.json();
 
-            //console.log("RESPOSTA API: Status:", resposta.status);
-            //console.log("RESPOSTA API: Total da Paginação:", resposta_json.paging.total);
-            //console.log("RESPOSTA API: Quantidade de vendas na página:", resposta_json.results ? resposta_json.results.length : 0);
 
             const vendasDaPagina = resposta_json.results;
             
@@ -179,8 +173,7 @@ const getVendas = async (access_token) => {
                 offset += limit;
             }
             
-            //console.log(`COLETA: Vendas coletadas até agora: ${todasAsVendas.length}. Total API: ${totalVendasApi}.`);
-            //console.log(`PRÓXIMO PASSO: Novo Offset será: ${offset}.`);
+
             // Se o total de vendas coletadas for igual ou maior que o total da API, sai do loop
             if (todasAsVendas.length >= totalVendasApi) {
                 //console.log("PARADA: Condição de parada atingida. Saindo do loop.");
@@ -370,14 +363,13 @@ const getDetalhesAnuncios = async (anuncioIds, access_token) => {
                 
                 return resposta.json();
             } catch (error) {
-                // Retry only for a timeout error
                 if (retries < maxRetries && error.cause && error.cause.code === 'UND_ERR_CONNECT_TIMEOUT') {
                     retries++;
                     console.warn(`Timeout! Retrying request ${retries}/${maxRetries}`);
-                    await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for 2 seconds
-                    return executeFetchWithRetry(); // Call the function recursively
+                    await new Promise(resolve => setTimeout(resolve, 2000)); 
+                    return executeFetchWithRetry(); 
                 } else {
-                    throw error; // Re-throw the error if it's not a timeout or if max retries are reached
+                    throw error; 
                 }
             }
         };
@@ -495,10 +487,7 @@ const updateEstoqueAnuncio = async (detalhesAnuncio, access_token, updatePayload
     //    variations: updatePayload
     //};
 
-    //const payload = {
-    //    //id: MLB5053247606,
-    //    available_quantity: 2
-    //};
+  
 
     // 3. Executa a requisição PUT
     const resposta = await fetch(url, {

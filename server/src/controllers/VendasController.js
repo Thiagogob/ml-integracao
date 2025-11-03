@@ -35,8 +35,7 @@ exports.listarVendas = async (req, res) => {
         } catch (error) {
             console.error('[VendaController] Erro:', error.message);
             
-            // Boas Práticas:
-            // Se for um erro de servidor/banco (que o service lançou), retorna 500.
+
             return res.status(500).json({ 
                 error: 'Falha interna do servidor', 
                 details: error.message 

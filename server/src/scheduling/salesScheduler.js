@@ -3,7 +3,7 @@ const meliService = require('../services/meli.service');
 const vendasService = require('../services/vendas.service');
 const anunciosService = require('../services/anuncios.service');
 const stockService = require('../services/stock.service');
-// Onde a lógica de observação e sincronização reside
+
 const runSalesSync = async () => {
     console.log(`\n--- [OBSERVADOR] Iniciando verificação de vendas (${new Date().toLocaleTimeString()}) ---`);
     let access_token;
@@ -26,10 +26,8 @@ const runSalesSync = async () => {
 
 
         const skusEAnuncios = await vendasService.syncVendas(access_token);
-        //vendasDoDia = await meliService.getVendas(access_token);
             
         
-        //await vendasService.salvarVendas(vendasDoDia.results);
         if (skusEAnuncios.length === 0) {
             return console.log("[OBSERVADOR] Nenhuma nova venda a ser processada.");
         }
@@ -95,7 +93,6 @@ const runSalesSync = async () => {
                     //Primeiro capturar todos os anúncios que tem aquele respectivo SKU
                     listaMLIDs = await anunciosService.getAnunciosBySku(anuncio.sku);
 
-                    //console.log(listaMLIDs);
 
                     //E esse loop aqui é pra fazer a atualização em massa do estoque disponível já que não estamos
                     //fragmentando o estoque para cada anúncio. Todos os anúncios da mesma roda tem o mesmo estoque

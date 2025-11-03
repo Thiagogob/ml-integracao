@@ -33,15 +33,12 @@ export const login = async (username: string, password: string): Promise<LoginRe
         return data;
 
     } catch (error: any) {
-        // Axios lança erros para status code 4xx/5xx.
-        // O LoginPage já trata esse erro, então apenas o relançamos.
+
         throw error; 
     }
 };
 
-/**
- * Remove o token do localStorage e encerra a sessão do usuário.
- */
+
 export const logout = (): void => {
     localStorage.removeItem(TOKEN_KEY);
 };

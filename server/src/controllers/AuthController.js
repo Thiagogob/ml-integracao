@@ -3,7 +3,6 @@ const bcrypt = require('bcrypt');
 const { User } = require('../config/database'); // Importa o modelo User
 const { sequelize } = require('../config/database');
 
-// Chave Secreta: DEVE ser a mesma usada no middleware e no script de seed/jwt.sign
 const JWT_SECRET = process.env.JWT_SECRET;
 const SALT_ROUNDS = 10; 
 

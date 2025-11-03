@@ -1,14 +1,10 @@
 const jwt = require('jsonwebtoken');
 
-// A CHAVE SECRETA DEVE SER CARREGADA DO SEU .env
 const JWT_SECRET = process.env.JWT_SECRET; 
-// Se a variável de ambiente não estiver carregada, use um valor temporário de DEV,
-// mas NUNCA vá para produção sem um .env carregado corretamente!
+
 if (!JWT_SECRET) {
     console.error("ERRO CRÍTICO: JWT_SECRET não está definida nas variáveis de ambiente!");
-    // Uma string forte para evitar que o servidor quebre em desenvolvimento
-    // DEVE SER REMOVIDA ANTES DE PRODUÇÃO SEM .ENV
-    // JWT_SECRET = 'SEGREDO_MUITO_SECRETO_DE_DEV'; 
+
 }
 
 exports.protect = (req, res, next) => {

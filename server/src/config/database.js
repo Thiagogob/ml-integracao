@@ -1,10 +1,10 @@
-// /server/src/config/database.js
+
 
 const { Sequelize, DataTypes } = require('sequelize');
 const path = require('path');
 const bcrypt = require('bcrypt');
 const SALT_ROUNDS = 10; // Número de rounds para a criptografia
-//require('dotenv').config({ path: path.resolve(__dirname, '..', '..', '.env') });
+
 
 
 // Configura a conexão com o banco de dados PostgreSQL

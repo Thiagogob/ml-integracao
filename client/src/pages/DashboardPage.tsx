@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { logout } from '../services/authService'; // Para a função de logout
 import { useNavigate } from 'react-router-dom';
 import Top5Card from '../components/ui/Top5Card';
-import api from '../services/api'; // Seu cliente Axios seguro
+import api from '../services/api'; 
 import AtencaoCard from '../components/ui/AtencaoCard';
 
 interface DashboardData {
@@ -36,12 +36,14 @@ const DashboardPage: React.FC = () => {
             try {
                 // 1. Chama o novo endpoint do backend para obter dados resumidos
                 const response = await api.get('/dashboard/summary');
+                
                 setData(response.data);
             } catch (err: any) {
                 // Se o token expirar (401/403), o interceptor pode redirecionar.
                 // Caso contrário, mostra o erro
                 setError('Falha ao carregar dados do dashboard. Tente novamente.');
                 console.error('Erro ao buscar dados:', err);
+
                 // Força logout e redireciona se o erro for 401/403
                 if (err.response?.status === 401 || err.response?.status === 403) {
                      logout();
@@ -73,15 +75,14 @@ const DashboardPage: React.FC = () => {
         <div className="min-h-screen bg-gray-900 text-white p-8">
             <header className="flex justify-between items-center mb-10 border-b border-gray-700 pb-4">
                 <h1 className="text-4xl font-bold text-white-400">Visão Geral</h1>
-                <div className="flex space-x-4"> {/* Container para os botões */}
-                    {/* NOVO BOTÃO: Listar Vendas */}
+                <div className="flex space-x-4"> 
                     <button
                         onClick={handleListarVendas}
                         className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg text-sm font-semibold transition"
                     >
                         Listar rodas para coleta
                     </button>
-                    {/* Botão Sair existente */}
+                   
                     <button
                         onClick={handleLogout}
                         className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-sm font-semibold transition"
@@ -95,14 +96,14 @@ const DashboardPage: React.FC = () => {
             {data ? (
                 <>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                    {/* Exemplo de Cartão de Dados */}
+                    
                     <DashboardCard title="Vendas de roda no dia" value={data.rodasVendidasDia} />
                     <DashboardCard title="Quantidade de rodas em Estoque" value={data.totalRodasEmEstoque} />
                     <DashboardCard title="Horário da última venda" value={data.ultimaSincronizacao} isDate={true} />
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    {/* Exemplo de Cartão de Dados */}
+                    
                     {data.top5Vendas && <Top5Card data={data.top5Vendas} />}
                 </div>
 
@@ -116,7 +117,7 @@ const DashboardPage: React.FC = () => {
                 <p className="text-center text-gray-400">Nenhum dado disponível.</p>
             )}
 
-            {/* Aqui você adicionaria mais botões de sincronização manual, tabelas, etc. */}
+            
         </div>
     );
 };

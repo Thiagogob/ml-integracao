@@ -1,5 +1,5 @@
 import React from 'react';
-// REMOVIDO: import styles from '../../styles/Button.module.css';
+
 
 // Define as propriedades que o Button pode receber
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {

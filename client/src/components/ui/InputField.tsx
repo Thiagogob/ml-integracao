@@ -4,7 +4,7 @@ import React from 'react';
 interface InputFieldProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label: string;
   id: string;
-  type?: 'text' | 'password' | 'email'; // Tipos comuns de input
+  type?: 'text' | 'password' | 'email'; 
   error?: string; // Para exibir mensagens de erro de validação
 }
 

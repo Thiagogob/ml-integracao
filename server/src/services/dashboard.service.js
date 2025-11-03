@@ -10,7 +10,7 @@ const getSummaryData = async () => {
         // 1. Total de Anúncios (Contagem simples de SKUs/Variações)
         const rodasVendidasDia = await vendasService.countDailyRodasVendidas();
 
-        // 2. Total de Estoque (Soma das colunas qtde_sp e qtde_sc em uma única query)
+        // 2. Total de Estoque 
         const estoqueResult = await Estoque.findOne({
             attributes: [
                 // Usa funções do Sequelize (PostgreSQL) para somar as colunas
@@ -37,7 +37,7 @@ const getSummaryData = async () => {
 
         return {
             rodasVendidasDia: rodasVendidasDia,
-            
+
             totalRodasEmEstoque: totalRodas,
 
             // Retorna o timestamp em formato ISO para o Frontend formatar

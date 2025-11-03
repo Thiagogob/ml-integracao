@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import InputField from '../components/ui/InputField';
 import Button from '../components/ui/Button';
-import { login } from '../services/authService'; // A função que chama sua API de login
-import { useNavigate } from 'react-router-dom'; // Para redirecionar após o sucesso
+import { login } from '../services/authService'; 
+import { useNavigate } from 'react-router-dom'; 
 
 // Definição da interface para os dados do formulário
 interface LoginFormState {
@@ -61,7 +61,7 @@ const LoginPage: React.FC = () => {
         // Contêiner principal: Fundo Cinza Escuro (bg-gray-900) e Letras Brancas (text-white)
         <div className="min-h-screen flex items-center justify-center bg-gray-900 p-4">
             
-            {/* Cartão de Login: Fundo um pouco mais claro (bg-gray-800) */}
+           
             <div className="w-full max-w-md p-8 space-y-6 bg-gray-800 rounded-xl shadow-2xl border border-gray-700">
                 
                 <h1 className="text-3xl font-bold text-center text-white">
@@ -71,7 +71,7 @@ const LoginPage: React.FC = () => {
                     Insira suas credenciais para continuar
                 </p>
                 
-                {/* Exibe erro de conexão/credencial */}
+                
                 {error && (
                     // Alerta de erro com fundo vermelho escuro e texto claro
                     <div className="bg-red-900 border border-red-700 text-red-300 px-4 py-3 rounded relative text-sm" role="alert">
@@ -80,7 +80,7 @@ const LoginPage: React.FC = () => {
                 )}
 
                 <form onSubmit={handleSubmit} className="space-y-6">
-                    {/* Nos componentes InputField, a cor do input e do label será ajustada no InputField.tsx para o Dark Mode */}
+                   
                     <InputField
                         label="Usuário"
                         id="username"
@@ -103,7 +103,6 @@ const LoginPage: React.FC = () => {
                         autoComplete="current-password"
                     />
                     
-                    {/* O botão Roxo/Índigo já se destaca bem em fundos escuros */}
                     <Button 
                         type="submit" 
                         isLoading={isLoading}
