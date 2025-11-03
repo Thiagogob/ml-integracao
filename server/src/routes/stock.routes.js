@@ -10,7 +10,7 @@ const StockController = require('../controllers/StockController');
 router.post('/upload-pdf', upload.single('stock'), StockController.uploadStockController);
 
 router.post('/upload-pdf-sul', 
-    upload.single('stock_sul'), // Use um nome de campo diferente no form se necessário, ex: 'stock_sul'
+    upload.single('stock_sul'), 
     StockController.uploadStockSulController
 );
 

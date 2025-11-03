@@ -19,7 +19,7 @@ const getAuth = async () => {
 
         const refresh_token_antigo = tokenRecord.refresh_token;
 
-        console.log("Refresh Token Antigo = ", refresh_token_antigo);
+        //console.log("Refresh Token Antigo = ", refresh_token_antigo);
 
         // 2. Prepara e faz a requisição para a API do Mercado Livre
         const url_principal = "https://api.mercadolibre.com/oauth/token";
@@ -48,7 +48,7 @@ const getAuth = async () => {
 
         const resposta_json = await resposta.json();
 
-        console.log("Refresh token novo = ", resposta_json.refresh_token);
+        //console.log("Refresh token novo = ", resposta_json.refresh_token);
 
 
 
