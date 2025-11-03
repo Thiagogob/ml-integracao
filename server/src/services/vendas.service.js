@@ -74,7 +74,7 @@ const getTop5RodasVendidas = async () => {
 }
 
 
-const getRodasAtencao = async () =>{
+const getRodasAtencao = async () => {
     const quinzeDiasAtras = new Date();
         quinzeDiasAtras.setDate(quinzeDiasAtras.getDate() - 15);
         
@@ -130,7 +130,7 @@ const indiceAtencaoLiteral = literal(`
                     // 2. Secundário: Ordenar pelo Total de Pedidos (Maior -> Menor)
                     [literal('total_pedidos_15dias'), 'DESC'] 
                 ], 
-                limit: 5, 
+                limit: 15, 
                 raw: true, 
             });
             

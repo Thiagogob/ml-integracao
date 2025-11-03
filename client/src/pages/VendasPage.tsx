@@ -27,7 +27,7 @@ const VendasPage: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [rawVendas, setRawVendas] = useState<Venda[]>([]);
-    
+    const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set());
 
     const view = searchParams.get('view') || 'coleta';
 
@@ -71,6 +71,17 @@ const vendasExibidas = useMemo(() => {
         );
     }, [rawVendas, view]);
     
+const handleToggleSelecao = (vendaId: string) => {
+        setSelecionadas(prev => {
+            const novoSet = new Set(prev);
+            if (novoSet.has(vendaId)) {
+                novoSet.delete(vendaId);
+            } else {
+                novoSet.add(vendaId);
+            }
+            return novoSet;
+        });
+    };
 
     // --- 3. FUNÇÕES DE NAVEGAÇÃO DOS BOTÕES ---
 const setView = (newView: 'coleta' | 'pendencia') => {
@@ -154,6 +165,22 @@ const handleMarcarComoColetado = async (vendaId: string, setVendas: any, setErro
         return <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">Carregando Vendas...</div>;
     }
 
+const handleGerarPedido = () => {
+        // 1. Filtrar apenas as rodas que foram selecionadas
+        const vendasSelecionadas = rawVendas.filter(venda => selecionadas.has(venda.id_venda));
+
+        if (vendasSelecionadas.length === 0) {
+            alert("Selecione pelo menos uma roda para gerar o pedido.");
+            return;
+        }
+
+        // 2. Navegar, passando os dados no state
+        navigate('/gerar-pedido', { 
+            state: { vendas: vendasSelecionadas } 
+        });
+    };
+
+
     // --- Renderização Principal ---
  return (
 <div className="min-h-screen bg-gray-900 text-white p-8">
@@ -163,8 +190,16 @@ const handleMarcarComoColetado = async (vendaId: string, setVendas: any, setErro
                 </h1>
                 <div className="flex space-x-4">
                     
-                    
                     <button
+                        onClick={handleGerarPedido}
+                        disabled={selecionadas.size === 0}
+                        className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${selecionadas.size === 0 ? 'bg-gray-500 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'}`}
+                    >
+                        Gerar Pedido ({selecionadas.size})
+                    </button>
+
+                    <button
+
                         onClick={handleViewToggle}
                         className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${view === 'coleta' ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'}`}
                     >
@@ -194,6 +229,12 @@ const handleMarcarComoColetado = async (vendaId: string, setVendas: any, setErro
                                 key={venda.id_venda} 
                                 className="bg-gray-800 p-5 rounded-xl shadow-lg border border-gray-700 flex justify-between items-center transition hover:border-indigo-500"
                             >
+                        <input 
+                            type="checkbox"
+                            checked={selecionadas.has(venda.id_venda)}
+                            onChange={() => handleToggleSelecao(venda.id_venda)}
+                            className="mr-4 h-5 w-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                        />
                                 {/* Bloco Esquerdo: Detalhes da Venda */}
                                 <div className="flex-1 min-w-0">
                                     <p className="text-sm text-gray-400">

@@ -68,3 +68,24 @@ exports.uploadStockSulController = async (req, res) => {
         return res.status(500).json({ error: 'Falha ao processar o arquivo de estoque do Sul.' });
     }
 };
+
+exports.getRodasPedidosPage = async (req, res) => {
+    const sku = req.params.sku;
+
+    try {
+        
+        const rodaDetalhes = await stockService.getRodaDetailsBySku(sku);
+
+        if (!rodaDetalhes) {
+            // Caso o SKU não seja encontrado no Estoque
+            return res.status(404).json({ error: `Detalhes da roda para SKU ${sku} não encontrados.` });
+        }
+
+        return res.json(rodaDetalhes);
+
+        
+    } catch (err){
+        console.error(err);
+        return res.status(500).json({ error: 'Falha ao carregar detalhes das rodas para gerar pedido.' });
+    }
+};

@@ -11,9 +11,10 @@ interface AtencaoRodas {
 
 interface AtencaoCardProps {
     data: AtencaoRodas[];
+    onDispensar: (sku: string) => void;
 }
 
-const AtencaoCard: React.FC<AtencaoCardProps> = ({ data }) => {
+const AtencaoCard: React.FC<AtencaoCardProps> = ({ data, onDispensar }) => {
     return (
         <div className="bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-700 col-span-1 md:col-span-3">
             <h2 className="text-xl font-bold text-red-500 mb-4">🚨 Rodas que Precisam de Atenção (Maior Risco)</h2>
@@ -38,6 +39,7 @@ const AtencaoCard: React.FC<AtencaoCardProps> = ({ data }) => {
                             </div>
                             
                             {/* Estoque e Índice */}
+                            <div className="flex items-center space-x-4">
                             <div className="text-right">
                                 <span className="text-lg font-extrabold text-yellow-400 block">
                                     {item.indice_atencao}
@@ -45,6 +47,14 @@ const AtencaoCard: React.FC<AtencaoCardProps> = ({ data }) => {
                                 <span className="text-sm text-gray-400">
                                     ({item.qtde_estoque_total} no estoque total)
                                 </span>
+                            </div>
+                            <button
+                                    onClick={() => onDispensar(item.sku)}
+                                    title="Dispensar esta roda da lista de atenção"
+                                    className="p-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full transition leading-none text-xs"
+                                >
+                                    ✔ {/* Ícone de "Feito" ou "OK" */}
+                                </button>
                             </div>
                         </li>
                     ))}

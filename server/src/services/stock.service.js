@@ -985,7 +985,21 @@ const subtrairRodasDeUmAnuncioDuasTalas = async (sku, quantidadeABaixar) => {
     }
 };
 
+// ==============================================================================================================================
 
+const getRodaDetailsBySku = async (sku) => {
+    try {
+        const roda = await Estoque.findOne({
+            attributes: ['modelo', 'aro', 'pcd', 'offset', 'acabamento'],
+            where: { sku: sku },
+            raw: true
+        });
+        return roda;
+    } catch (error) {
+        console.error(`[StockService] Erro ao buscar detalhes da roda para SKU ${sku}:`, error);
+        return null;
+    }
+}
 
 // Exporta as funções para serem usadas no controller
 module.exports = {
@@ -997,5 +1011,6 @@ module.exports = {
     subtrairRodasDoEstoque,
     subtrairRodasDeUmAnuncioDuasTalas,
     normalizeModelCodes,
-    mergeStockPrFromTemporary
+    mergeStockPrFromTemporary,
+    getRodaDetailsBySku
 };

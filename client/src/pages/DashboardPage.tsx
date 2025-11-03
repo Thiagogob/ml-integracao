@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { logout } from '../services/authService'; // Para a função de logout
 import { useNavigate } from 'react-router-dom';
 import Top5Card from '../components/ui/Top5Card';
+import { toast } from 'react-toastify'; // Usado para notificar a cópia
 import api from '../services/api'; 
 import AtencaoCard from '../components/ui/AtencaoCard';
 
@@ -30,6 +31,8 @@ const DashboardPage: React.FC = () => {
     const [data, setData] = useState<DashboardData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [skusDispensados, setSkusDispensados] = useState<Set<string>>(new Set());
+
 
     useEffect(() => {
         const fetchDashboardData = async () => {
@@ -66,6 +69,28 @@ const DashboardPage: React.FC = () => {
     const handleListarVendas = () => {
         navigate('/vendas'); 
     };
+
+const top5AtencaoFiltrado = useMemo(() => {
+        if (!data || !data.top5Atencao) return [];
+        
+        // 1. Filtrar os itens dispensados
+        const listaFiltrada = data.top5Atencao.filter(item => !skusDispensados.has(item.sku));
+        
+        // 2. 🎯 NOVO: Limitar o resultado exibido aos 5 primeiros
+        // O item que antes era Top 6 (agora Top 5) será carregado na lista.
+        return listaFiltrada.slice(0, 5);
+        
+    }, [data, skusDispensados]);
+
+    const handleDispensarRoda = (sku: string) => {
+        setSkusDispensados(prevSet => {
+            const novoSet = new Set(prevSet);
+            novoSet.add(sku); // Adiciona o SKU dispensado
+            return novoSet;
+        });
+        toast.info(`Atenção dispensada para o SKU ${sku}`);
+    };
+
 
     if (loading) {
         return <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">Carregando Dashboard...</div>;
@@ -113,11 +138,15 @@ const DashboardPage: React.FC = () => {
                     {data.top5Vendas && <Top5Card data={data.top5Vendas} />}
                 </div>
 
-                {data.top5Atencao && data.top5Atencao.length > 0 && (
-            <div className="mt-8"> {/* Adiciona espaço superior */}
-                <AtencaoCard data={data.top5Atencao} />
-            </div>
-        )}
+{data.top5Atencao && data.top5Atencao.length > 0 && (
+                        <div className="mt-8">
+                            <AtencaoCard 
+                                data={top5AtencaoFiltrado} 
+                                // 🎯 PASSANDO O HANDLER COMO PROP
+                                onDispensar={handleDispensarRoda} 
+                            />
+                        </div>
+                    )}
                 </>
             ) : (
                 <p className="text-center text-gray-400">Nenhum dado disponível.</p>
