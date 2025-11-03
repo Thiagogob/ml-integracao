@@ -8,3 +8,4 @@ query-skus.sql
 seed.js
 skuComId.js
 parsed-pdf-output.txt
+stock-data.json
