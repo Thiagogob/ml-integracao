@@ -104,7 +104,7 @@ const runSalesSync = async () => {
 
                         const updatePayload = anunciosService.generateUpdatePayload(detalhesAnuncio, detalhesEstoque)
                         
-                        await meliService.updateEstoqueAnuncio(detalhesAnuncio, access_token, updatePayload)
+                        await meliService.updateEstoqueAnuncio(detalhesAnuncio, access_token, updatePayload, 1)
 
                     }
 

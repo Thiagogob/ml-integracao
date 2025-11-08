@@ -1,11 +1,18 @@
 const { Token, Venda } = require('../config/database');
 const { QueryTypes } = require('sequelize');
 require('dotenv').config();
+const anunciosService = require('../services/anuncios.service');
+const stockService = require('../services/stock.service');
+
 const SELLER_ID = process.env.SELLER_ID;
 const SECRET_KEY = process.env.SECRET_KEY;
 const ACCESS_TOKEN = process.env.ACCESS_TOKEN;
 const APP_ID = process.env.APP_ID;
+const DELAY_MS = 500;
+const INITIAL_RETRY_DELAY_MS = 2000; // 2 segundos
+const MAX_RETRIES = 3; // Limita a 3 tentativas totais
 
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 const getAuth = async () => {
     try {
@@ -448,7 +455,7 @@ const getDetalhesAnuncios = async (anuncioIds, access_token) => {
     }
 };
 
-const updateEstoqueAnuncio = async (detalhesAnuncio, access_token, updatePayload) => {
+const updateEstoqueAnuncio = async (detalhesAnuncio, access_token, updatePayload, attempt = 1) => {
     
     
     const mlItemId = detalhesAnuncio[0].ml_id
@@ -497,8 +504,26 @@ const updateEstoqueAnuncio = async (detalhesAnuncio, access_token, updatePayload
     });
 
     const respostaJson = await resposta.json();
+    const statusCode = resposta.status;
 
     if (!resposta.ok) {
+
+        if (statusCode === 409) {
+            console.warn(`[ML API - 409 IGNORADO] Conflito de concorrência detectado para ML ID ${detalhesAnuncio[0].ml_id}. Continuando o processo.`);
+            return { status: 409, message: 'Conflict ignored.' }; // Retorna sucesso silencioso
+        }
+
+        if (statusCode === 429 && attempt < MAX_RETRIES) {
+                const retryDelay = INITIAL_RETRY_DELAY_MS * attempt; // 2s, 4s, 6s, etc.
+                
+                console.warn(`[ML API - 429 RETRY] Rate Limit atingido para ML ID ${mlItemId}. Tentativa ${attempt}/${MAX_RETRIES}. Retrying in ${retryDelay / 1000}s...`);
+                
+                await delay(retryDelay); // Pausa a execução
+                
+                // 🎯 CHAMADA RECURSIVA: Tenta novamente com a próxima tentativa
+                return updateEstoqueAnuncio(detalhesAnuncio, access_token, updatePayload, attempt + 1);
+            }
+
         console.error(`Erro ao atualizar estoque (${resposta.status}):`, respostaJson);
         throw new Error(`Falha na atualização do estoque (Status ${resposta.status}).`);
     }
@@ -506,6 +531,39 @@ const updateEstoqueAnuncio = async (detalhesAnuncio, access_token, updatePayload
     console.log("[ML API] Estoque atualizado com sucesso.");
     return respostaJson;
 };
+
+const processCriticalUpdates = async(mudancasCriticas,access_token) => {
+try{
+    for (rodaAlterada of mudancasCriticas) {
+
+        if(!(rodaAlterada.sku==='')){
+
+            listaMLIDs = await anunciosService.getAnunciosBySku(rodaAlterada.sku);
+
+            for(const ML_ID of listaMLIDs){
+            
+                const detalhesAnuncio = await anunciosService.getAnuncio(ML_ID.ml_id);
+            
+                const detalhesEstoque = await stockService.getRoda(detalhesAnuncio);
+
+                console.log(detalhesEstoque)
+            
+                const updatePayload = anunciosService.generateUpdatePayload(detalhesAnuncio, detalhesEstoque)
+
+                await delay(DELAY_MS);
+                
+                await updateEstoqueAnuncio(detalhesAnuncio, access_token, updatePayload)
+            
+            }
+
+        }
+    }
+    }
+    catch(error){
+        console.error("[PROCESSAR VENDAS/REPOSICOES] Erro fatal durante o processamento de vendas/reposicoes:", error.message);
+
+    }
+}
 
 
 
@@ -515,5 +573,7 @@ module.exports = {
   authTest,
   getIdsAnuncios,
   getDetalhesAnuncios,
-  updateEstoqueAnuncio
+  updateEstoqueAnuncio,
+  processCriticalUpdates,
+  delay
 };

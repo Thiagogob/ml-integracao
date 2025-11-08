@@ -23,7 +23,7 @@ interface RodaDetalhe extends Venda {
     linhaRoda: string;
 }
 
-const LINHAS_RODA = ['Passeio', 'Linha M', '4x4', 'Linha Polida', 'Linha E', 'Linha L', 'Linha F', 'Linha G'];
+const LINHAS_RODA = ['Passeio', 'BAR','Linha M', '4x4', 'Linha Polida', 'Linha E', 'Linha L', 'Linha F', 'Linha G'];
 
 const inferirLinha = (modelo: string, acabamento: string): string => {
     const modeloUpper = modelo.toUpperCase().trim();
@@ -34,7 +34,12 @@ const inferirLinha = (modelo: string, acabamento: string): string => {
         return 'Linha Polida';
     }
     
-    // 2. Regra baseada no Modelo
+    // 2. 🎯 NOVA REGRA: Linha BAR (Verifica se o nome do modelo está no Set)
+    if (LINHA_BAR_MODELOS.has(modeloUpper)) {
+        return 'BAR';
+    }
+
+    // 3. Regra baseada no Modelo (Prefixos)
     if (modeloUpper.startsWith('M')) {
         return 'Linha M';
     }
@@ -51,7 +56,7 @@ const inferirLinha = (modelo: string, acabamento: string): string => {
         return 'Linha G';
     }
 
-    // 3. Regra Padrão (Fallback)
+    // 4. Regra Padrão (Fallback)
     return 'Passeio';
 };
 
@@ -68,63 +73,187 @@ const CUSTO_PASSEIO = {
     '20 T8': 3880.00,
 };
 
+// src/pages/GerarPedidoPage.tsx (Adicionar no escopo do arquivo)
+
+const CUSTO_LINHA_M: Record<string, number> = {
+    // Chave: 'CODIGO|ARO' ou apenas 'CODIGO'
+    'M05|15': 2060.00,
+    'M08|14': 2480.00,
+    'M08|15': 2580.00,
+    'M10|14': 2480.00,
+    'M10|15': 2580.00,
+    'M10|17': 3500.00,
+    'M11|15': 2000.00,
+    'M12': 3880.00, // Geral
+    'M15': 3300.00, // Geral
+    'M17|15': 2360.00,
+    'M17|17': 2740.00,
+    'M18': 1990.00, // Geral
+    'M19': 2060.00, // Geral
+    'M20|15': 2060.00,
+    'M20|17': 2600.00,
+    'M21|16': 2390.00,
+    'M22|16': 3790.00,
+    'M22|18': 4300.00,
+    'M23|18': 3790.00,
+    'M23|20': 4350.00,
+    'M26': 2060.00, // Geral
+    'M27|16': 4050.00,
+    'M28|15': 1840.00,
+    'M28|16': 2180.00,
+    'M30|17': 2600.00,
+    'M30|18': 3300.00,
+    'M30|19': 4100.00,
+    'M30|20': 4300.00,
+    'M31|17': 3990.00, // Desempate
+    'M31|20': 4990.00, // Desempate
+    'M32': 2000.00, // Geral
+    'M33': 6200.00, // Geral
+    'M34': 4300.00, // Geral
+};
+
+// src/pages/GerarPedidoPage.tsx (Adicionar no escopo do arquivo)
+
+const CUSTO_LINHA_BAR: Record<string, number> = {
+    'ALFA|17': 2550.00,
+    'AMG|18': 3435.00,
+    'AMG|19': 3880.00,
+    'ARION|19': 3880.00,
+    'B20|15': 1940.00,
+    'BALLINA|17': 2850.00,
+    'BALLINA|18': 3100.00,
+    'BMW|20': 3880.00,
+    'CENTAURO|20': 3880.00,
+    'DISCOVE|19': 3880.00,
+    'FUCHS|17': 2700.00,
+    'GLI|17': 2450.00,
+    'GTS|18': 3570.00,
+    'GTS|20': 3880.00,
+    'MAGNA|18': 3210.00,
+    'MK7|20': 4180.00,
+    'MORGAN|15': 1940.00,
+    'MORGAN|17': 2560.00,
+    'MTB|16': 2890.00,
+    'NEWSUN|15': 2140.00,
+    'NEWSUN|17': 2550.00,
+    'NEWSUN|18': 3200.00,
+    'ORBITAL|17': 2390.00,
+    'PINGO|15': 2440.00,
+    'PINGO|17': 2970.00,
+    'POLO|17': 2390.00,
+    'PORSHE 914|17': 2550.00,
+    'Q8|20': 3880.00,
+    'SAMPSO|17': 2450.00,
+    'SAMPSO|18': 3570.00,
+    'SAMPSO|19': 3880.00,
+    'STROLLE|18': 3570.00,
+    'SUMMER|15': 2430.00,
+    'SUMMER|17': 2550.00,
+    'TARANT|15': 1940.00,
+    'TE37|17': 2550.00,
+    'TT|17': 2250.00,
+    'VRS|15': 1940.00,
+};
+
+const LINHA_BAR_MODELOS = new Set(
+    Object.keys(CUSTO_LINHA_BAR).map(key => key.split('|')[0])
+);
+
 const calcularPrecoCusto = (roda: RodaDetalhe): number => {
-    // 1. Regra: Só processa a Linha PASSEIO por enquanto
-    if (roda.linhaRoda !== 'Passeio') {
-        return 0; // Preço 0 para outras linhas até serem implementadas
-    }
     
-    // 2. Extrair Aro e Tala
-    // Aro no formato '17X7.5' -> Aro = 17, Tala = 7.5
-    // Usamos split('X') e tratamos a primeira parte como Aro principal
+    // --- 1. DECLARAÇÃO ÚNICA: Extração de dados (INALTERADO) ---
+    const linhaRoda = roda.linhaRoda;
+    const modeloUpper = roda.modelo.toUpperCase().trim();
+    
+    // Extrai Aro e Tala
     const [aroString, talaString] = roda.aro.toUpperCase().split('X'); 
     const aro = parseInt(aroString, 10);
-    const tala = parseFloat(talaString?.replace(',', '.') || '0'); // Tala é opcional
+    const tala = parseFloat(talaString?.replace(',', '.') || '0'); 
+    // -----------------------------------------------------------
 
-    // 3. Aplica Regras de Custo (em ordem decrescente de especificidade)
+
+    // --- 2. LÓGICA DE CUSTO SEQUENCIAL (if / else if) ---
+
+    // 🎯 Bloco A: Linha PASSEIO
+    if (linhaRoda === 'Passeio') {
+        // AQUI VAI TODA A LÓGICA DO PASSEIO (ARO 20, 18, 17, etc.)
+        
+   if (aro === 20) {
+            if (tala >= 8) return CUSTO_PASSEIO['20 T8'];
+            if (tala >= 7.5) return CUSTO_PASSEIO['20 T7.5'];
+        }
+
+        // ARO 18
+        if (aro === 18) {
+            if (tala >= 8) return CUSTO_PASSEIO['18 T8'];
+            if (tala >= 7) return CUSTO_PASSEIO['18 T7'];
+        }
+        
+        // ARO 17
+        if (aro === 17) {
+            if (tala >= 4 && tala <= 7) return CUSTO_PASSEIO['17 T4/6/7'];
+            return 2500.00; 
+        }
+        
+        // ARO 16
+        if (aro === 16) {
+            return CUSTO_PASSEIO['16 T6'];
+        }
+        
+        // ARO 15
+        if (aro === 15) {
+            if (tala >= 7) return CUSTO_PASSEIO['15 T7/8'];
+            if (tala >= 6) return CUSTO_PASSEIO['15 T6'];
+        }
+
+        // ARO 14
+        if (aro === 14) {
+            return CUSTO_PASSEIO['14'];
+        }
+
+        // ARO 13
+        if (aro === 13) {
+            return CUSTO_PASSEIO['13'];
+        }
+        
+        // 🎯 RETORNO SE NENHUMA REGRA ESPECÍFICA FOR ATENDIDA (Ex: ARO 19)
+        return 0; 
+    }
     
-    // ARO 20
-    if (aro === 20) {
-        if (tala >= 8) return CUSTO_PASSEIO['20 T8'];
-        if (tala >= 7.5) return CUSTO_PASSEIO['20 T7.5'];
-    }
+    // 🎯 Bloco B: Linha M
+    else if (linhaRoda.includes('Linha M')) {
+        const match = modeloUpper.match(/M\d{1,3}/);
+        const codigoM = match ? match[0] : null;
 
-    // ARO 18
-    if (aro === 18) {
-        if (tala >= 8) return CUSTO_PASSEIO['18 T8'];
-        if (tala >= 7) return CUSTO_PASSEIO['18 T7'];
-    }
+        if (!codigoM) return 0;
+
+        // Tentativa 1: Chave composta (CÓDIGO|ARO)
+        const chaveComposta = `${codigoM}|${aro}`;
+        if (CUSTO_LINHA_M[chaveComposta]) {
+            return CUSTO_LINHA_M[chaveComposta];
+        }
+
+        // Tentativa 2: Código M geral
+        if (CUSTO_LINHA_M[codigoM]) {
+            return CUSTO_LINHA_M[codigoM];
+        }
+        return 0; // Fallback Linha M
+    } 
     
-    // ARO 17
-    if (aro === 17) {
-        // Regra geral Aro 17 Tala 4/6/7. Ignora Orbital/R89 por enquanto.
-        if (tala >= 4 && tala <= 7) return CUSTO_PASSEIO['17 T4/6/7'];
-        return 2500.00; // Fallback para Aro 17
+    // 🎯 Bloco C: Linha BAR (Este bloco está OK)
+    else if (linhaRoda === 'BAR') {
+        // A lógica da Linha BAR se baseia no Modelo (normalizado) + Aro
+        const chaveComposta = `${modeloUpper}|${aro}`;
+        
+        if (CUSTO_LINHA_BAR[chaveComposta]) {
+            return CUSTO_LINHA_BAR[chaveComposta];
+        }
+        return 0; // Fallback Linha BAR
     }
+ 
+    // [REMOVIDO O BLOCO DE LÓGICA DE PRECIFICAÇÃO DUPLICADO DA PARTE INFERIOR]
     
-    // ARO 16
-    if (aro === 16) {
-        // Regra geral Aro 16x6
-        return CUSTO_PASSEIO['16 T6'];
-    }
-    
-    // ARO 15
-    if (aro === 15) {
-        if (tala >= 7) return CUSTO_PASSEIO['15 T7/8'];
-        if (tala >= 6) return CUSTO_PASSEIO['15 T6'];
-    }
-
-    // ARO 14
-    if (aro === 14) {
-        return CUSTO_PASSEIO['14'];
-    }
-
-    // ARO 13
-    if (aro === 13) {
-        return CUSTO_PASSEIO['13'];
-    }
-
-    return 0; // Retorno padrão se nenhuma regra for aplicada
+    return 0; // Retorno padrão se nenhuma regra for aplicada ou linha não for implementada
 };
 
 const GerarPedidoPage: React.FC = () => {
@@ -172,28 +301,47 @@ const handleLinhaChange = (sku: string, novaLinha: string) => {
             return;
         }
 
-        const fetchDetalhes = async () => {
+const fetchDetalhes = async () => {
             const rodaPromessas = vendasIniciais.map(async (venda: Venda) => {
                 const response = await api.get(`/stock/detalhes-roda-simples/${venda.sku}`);
                 const detalhes = response.data;
                 
-                // 🎯 INFERIR A LINHA NO MOMENTO DA CARGA
                 const linhaInferida = inferirLinha(detalhes.modelo, detalhes.acabamento);
 
-                const precoCusto = calcularPrecoCusto({ ...venda, ...detalhes, linhaRoda: linhaInferida } as RodaDetalhe);
+                // 1. Calcula o preço de custo base (sem desconto)
+                const precoBase = calcularPrecoCusto({ 
+                    ...venda, 
+                    ...detalhes, 
+                    linhaRoda: linhaInferida 
+                } as RodaDetalhe);
+                
+                // 2. 🎯 DEFINIÇÃO DA TAXA DE DESCONTO
+                let fatorDesconto;
+                if (linhaInferida === 'BAR') {
+                    // 7% de desconto (Preço final = 93% do base)
+                    fatorDesconto = 0.93; 
+                } else {
+                    // 8% de desconto (Preço final = 92% do base) - Aplica a todas as outras linhas
+                    fatorDesconto = 0.92; 
+                }
+                
+                // 3. APLICAÇÃO DO DESCONTO
+                const precoComDesconto = precoBase * fatorDesconto;
+
+                const precoFinalArredondado = Math.floor(precoComDesconto);
 
                 return {
                     ...venda,
                     ...detalhes,
                     isLoaded: true,
-                    linhaRoda: linhaInferida, 
-                    precoCusto: precoCusto
+                    linhaRoda: linhaInferida,
+                    precoCusto: precoFinalArredondado // Usa o valor já com desconto condicional
                 } as RodaDetalhe;
             });
 
             const detalhesCompletos = await Promise.all(rodaPromessas);
             
-            // Não há mais seleção; todas as rodas são listadas por padrão.
+            // ... (restante do código) ...
             setRodasPedido(detalhesCompletos);
             setLoading(false);
         };
@@ -216,7 +364,7 @@ const gerarTextoPedido = (rodas: RodaDetalhe[]): string => {
         
         // 1. Modelo Curto (Ex: AK2010 -> AK20)
         // Assume que o modelo é o que você quer no pedido (curto)
-        const modeloCurto = roda.modelo.toUpperCase().substring(0, 4).trim(); 
+        const modeloCompleto = roda.modelo.toUpperCase().trim();
         
         // 2. Aro Numérico (Ex: 17X7.5 -> 17)
         // Pega a parte do aro antes do 'X' (Ex: '17')
@@ -235,7 +383,7 @@ const gerarTextoPedido = (rodas: RodaDetalhe[]): string => {
         // --- FIM DA EXTRAÇÃO ---
         
         // Retorna a linha do pedido: 04 S48 15 4X100 BD
-        return `${String(roda.quantidade).padStart(2, '0')} ${modeloCurto} ${aroNum} ${pcdFormatado} ${acabamentoCurto}\n${precoFormatado}\n`;
+        return `${String(roda.quantidade).padStart(2, '0')} ${modeloCompleto} ${aroNum} ${pcdFormatado} ${acabamentoCurto}\n${precoFormatado}\n`;
     }).join('\n');
 
     return `${linhasPedido}\nCliente Retira\n\nCheques`;

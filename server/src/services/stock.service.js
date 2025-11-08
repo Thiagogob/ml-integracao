@@ -262,7 +262,222 @@ const normalizeString = (str) => {
 
 
 
-const saveStock = async (estoque) => {
+//const saveStock = async (estoque) => {
+//
+//    // Lista das colunas que identificam a roda (chave composta)
+//    const uniqueFields = ['modelo', 'aro', 'pcd', 'offset', 'acabamento'];
+//    
+//    // Inicia uma transação para garantir que a operação seja atômica
+//    const transaction = await sequelize.transaction();
+//    
+//    try {
+//        console.log("Iniciando a sincronização inteligente de estoque...");
+//
+//        // 1. PREPARAÇÃO DOS DADOS: Cria a lista de objetos para o Upsert
+//        const registrosParaUpsert = estoque.map((roda, index) => {
+//
+//            // --- CORREÇÃO DE MODELOS INCOMPLETOS --
+//
+//            const nomeModeloCorrigido = fixModelName(roda.MODELO);
+//
+//            // --- FIM DA CORREÇÃO DE MODELOS INCOMPLETOS --
+//
+//
+//
+//            // -- CORREÇÃO ACABAMENTO INCOMPLETO --
+//
+//                const acabamentoCorrigido = fixAcabamento(roda.ACABAMENTO);
+//
+//            // -- FIM DA CORREÇÃO ACABAMENTO INCOMPLETO --
+//            
+//
+//
+//
+//            let aroCorrigido = String(roda.ARO || '');
+//            
+//
+//
+//            // --- CORREÇÃO DO CAMPO ARO (Padronização) ---
+//
+//            // 1. Regra de Negócio: Se o aro termina em vírgula (ex: '20x7,'), assume-se que é ',5' e corrige.
+//            if (aroCorrigido.endsWith(',')) {
+//                
+//                 aroCorrigido = `${aroCorrigido}5`; // '20x7,' vira '20x7,5'
+//
+//            }
+//            // --- FIM DA CORREÇÃO DO CAMPO ARO ---
+//            
+//
+//
+//            // Normaliza cada campo da chave composta
+//            const modelo = normalizeString(nomeModeloCorrigido);
+//
+//            // CORREÇÃO ESSENCIAL: Usa o aroCorrigido e normaliza para a chave
+//            const aro = normalizeString(aroCorrigido); 
+//
+//            const pcd = normalizeString(roda.PCD);
+//
+//            const offset = normalizeString(roda.OFFSET);
+//
+//            const acabamento = normalizeString(acabamentoCorrigido);
+//
+//            const unique_key = `${modelo}|${aro}|${pcd}|${offset}|${acabamento}`;
+//
+//            //if (index < 5) {
+//            //    console.log(`[DEBUG ENTRADA ${index}] Key Aro (Corrigido): ${aro} | Key Completa: ${unique_key}`);
+//            //}
+//
+//            return {
+//                modelo: modelo,
+//
+//                aro: aro,
+//
+//                pcd: pcd,
+//
+//                offset: offset,
+//
+//                acabamento: acabamento,
+//
+//                sku: normalizeString(roda.SKU),
+//
+//                qtde_sp: roda.QTDE_SP,
+//
+//                qtde_sc: roda.QTDE_SC,
+//
+//                // Chave única normalizada para ser usada na comparação
+//                unique_key: unique_key
+//            };
+//        });
+//        
+//        // 2. PRÉ-VERIFICAÇÃO: Identifica quais rodas já existem no DB.
+//        const chavesParaVerificar = registrosParaUpsert.map(r => r.unique_key);
+//        
+//        // Monta a condição OR para buscar todas as chaves de entrada no DB
+//        const orConditions = chavesParaVerificar.map(key => {
+//
+//            const [modelo, aro, pcd, offset, acabamento] = key.split('|');
+//
+//            return {
+//                [Op.and]: { 
+//                    // Normaliza os dados do DB (TRIM e LOWER) para comparação
+//                    modelo: sequelize.where(sequelize.fn('LOWER', sequelize.fn('TRIM', sequelize.col('modelo'))), modelo),
+//
+//                    aro: sequelize.where(sequelize.fn('LOWER', sequelize.fn('TRIM', sequelize.col('aro'))), aro),
+//
+//                    pcd: sequelize.where(sequelize.fn('LOWER', sequelize.fn('TRIM', sequelize.col('pcd'))), pcd),
+//
+//                    offset: sequelize.where(sequelize.fn('LOWER', sequelize.fn('TRIM', sequelize.col('offset'))), offset),
+//
+//                    acabamento: sequelize.where(sequelize.fn('LOWER', sequelize.fn('TRIM', sequelize.col('acabamento'))), acabamento),
+//
+//                }
+//            };
+//        });
+//
+//        // Consulta o DB para encontrar todas as rodas existentes
+//        const rodasExistentes = await Estoque.findAll({
+//
+//            attributes: uniqueFields,
+//
+//            where: {
+//                [Op.or]: orConditions 
+//            },
+//
+//            transaction: transaction,
+//
+//            raw: true
+//
+//        });
+//
+//
+//        
+//        // Converte as rodas existentes em um Set de chaves únicas normalizadas
+//        const chavesExistentesSet = new Set(
+//
+//            rodasExistentes.map((r, index) => {
+//
+//                const dbKey = `${normalizeString(r.modelo)}|${normalizeString(r.aro)}|${normalizeString(r.pcd)}|${normalizeString(r.offset)}|${normalizeString(r.acabamento)}`;
+//                
+//                // DEBUG 3: Loga as primeiras chaves do DB para comparação
+//                //if (index < 5) {
+//                //    console.log(`[DEBUG SAÍDA ${index}] Key DB: ${dbKey}`);
+//                //}
+//
+//                return dbKey;
+//            })
+//        );
+//        
+//        // 3. IDENTIFICAÇÃO DOS NOVOS MODELOS
+//        let novosModelos = 0;
+//        
+//        registrosParaUpsert.filter(registro => {
+//
+//            const key = registro.unique_key;
+//
+//            if (!chavesExistentesSet.has(key)) {
+//
+//                // Mantém o formato de log solicitado
+//                console.log(`\n[MODELO NOVO DETECTADO] Inserindo: ${registro.modelo} ${registro.aro} ${registro.pcd} ${registro.offset} ${registro.acabamento}`);
+//                novosModelos++;
+//                return true;
+//
+//            }
+//
+//            return false;
+//        });
+//        
+//        // 4. ZERAR O ESTOQUE ANTIGO
+//        console.log('Zerando o estoque antes da atualização...');
+//
+//        await Estoque.update(
+//
+//            { qtde_sp: 0, qtde_sc: 0 },
+//
+//            { where: {}, transaction: transaction }
+//
+//        );
+//
+//        console.log('Estoque zerado com sucesso.');
+//
+//        // 5. UPSERT EM LOTE
+//        await Estoque.bulkCreate(registrosParaUpsert, {
+//
+//            updateOnDuplicate: [
+//                ...uniqueFields,
+//
+//                'qtde_sp',
+//
+//                'qtde_sc'
+//            ],
+//            transaction: transaction,
+//            //order: [['modelo', 'ASC']],
+//            returning: true 
+//        });
+//        
+//        await transaction.commit();
+//        
+//        rodasProcessadas = registrosParaUpsert.length;
+//
+//        const modelosAtualizados = rodasProcessadas - novosModelos;
+//
+//        console.log(`\n--- SINCRONIZAÇÃO CONCLUÍDA ---`);
+//        console.log(`Modelos no arquivo: ${rodasProcessadas}`);
+//        console.log(`Novos modelos adicionados: ${novosModelos}`);
+//        console.log(`Modelos atualizados: ${modelosAtualizados}`); 
+//        console.log(`Estoque sincronizado por chave composta!`);
+//
+//    } catch (error) {
+//        await transaction.rollback(); 
+//        console.error('Erro fatal ao sincronizar o estoque:', error);
+//        throw error;
+//    }
+//};
+
+
+// =====================================================================
+
+
+const saveStock = async (estoque, access_token, processCriticalUpdates) => {
 
     // Lista das colunas que identificam a roda (chave composta)
     const uniqueFields = ['modelo', 'aro', 'pcd', 'offset', 'acabamento'];
@@ -377,7 +592,7 @@ const saveStock = async (estoque) => {
         // Consulta o DB para encontrar todas as rodas existentes
         const rodasExistentes = await Estoque.findAll({
 
-            attributes: uniqueFields,
+            attributes: [...uniqueFields, 'qtde_sp', 'qtde_sc', 'qtde_pr', 'sku'],
 
             where: {
                 [Op.or]: orConditions 
@@ -389,56 +604,66 @@ const saveStock = async (estoque) => {
 
         });
 
-        //console.log(`\n[DEBUG 2] Total de rodas retornadas pelo DB: ${rodasExistentes.length}`);
-
+        // 🎯 2. CRIAÇÃO DE UM MAP DE REFERÊNCIA (Chave Única -> Dados Antigos)
+        // Isso permite buscar o estoque antigo de forma rápida
+        const estoqueAntigoMap = new Map();
         
-        // Converte as rodas existentes em um Set de chaves únicas normalizadas
-        const chavesExistentesSet = new Set(
+        rodasExistentes.forEach(r => {
+            const dbKey = `${normalizeString(r.modelo)}|${normalizeString(r.aro)}|${normalizeString(r.pcd)}|${normalizeString(r.offset)}|${normalizeString(r.acabamento)}`;
+            
+            // Armazenamos o objeto completo (quantidades antigas)
+            estoqueAntigoMap.set(dbKey, { qtde_sp: r.qtde_sp, qtde_sc: r.qtde_sc, qtde_pr: r.qtde_pr, sku: r.sku });
+        });
 
-            rodasExistentes.map((r, index) => {
+        const mudancasCriticas = [];
 
-                const dbKey = `${normalizeString(r.modelo)}|${normalizeString(r.aro)}|${normalizeString(r.pcd)}|${normalizeString(r.offset)}|${normalizeString(r.acabamento)}`;
-                
-                // DEBUG 3: Loga as primeiras chaves do DB para comparação
-                //if (index < 5) {
-                //    console.log(`[DEBUG SAÍDA ${index}] Key DB: ${dbKey}`);
-                //}
-
-                return dbKey;
-            })
-        );
-        
-        // 3. IDENTIFICAÇÃO DOS NOVOS MODELOS
         let novosModelos = 0;
         
         registrosParaUpsert.filter(registro => {
-
             const key = registro.unique_key;
+            const estoqueAntigo = estoqueAntigoMap.get(key); // Estoque do DB (antigo)
 
-            if (!chavesExistentesSet.has(key)) {
-
-                // Mantém o formato de log solicitado
-                console.log(`\n[MODELO NOVO DETECTADO] Inserindo: ${registro.modelo} ${registro.aro} ${registro.pcd} ${registro.offset} ${registro.acabamento}`);
+            // A. LÓGICA PARA MODELOS NOVOS
+            if (!estoqueAntigo) {
+                // Modelo NOVO detectado
+                console.log(`\n[MODELO NOVO DETECTADO] Inserindo: ${registro.modelo} ...`);
                 novosModelos++;
+                
+                // Tratar como MUDANÇA CRÍTICA: Estoque foi de 0 para X
+                mudancasCriticas.push({ 
+                    sku: registro.sku, 
+                    qtde_antiga: 0, 
+                    qtde_nova: registro.qtde_sp + registro.qtde_sc + registro.qtde_pr,
+                    tipo: 'REPOSIÇÃO'
+                });
+                
                 return true;
+            } 
+            
+            // B. LÓGICA PARA COMPARAÇÃO DE ESTOQUE EXISTENTE
+            else {
+                const qtdeAntiga = estoqueAntigo.qtde_sp + estoqueAntigo.qtde_sc; // Soma antiga
+                const qtdeNova = registro.qtde_sp + registro.qtde_sc + registro.qtde_pr; // Soma nova
 
+                // 🎯 VERIFICAÇÃO DE MUDANÇA SIGNIFICATIVA (Qualquer mudança)
+                if (qtdeAntiga !== qtdeNova) {
+                    
+                    const tipoMudanca = qtdeNova > qtdeAntiga ? 'REPOSIÇÃO' : 'BAIXA';
+                    
+                    mudancasCriticas.push({
+                        sku: estoqueAntigo.sku, // Usamos o SKU do DB
+                        qtde_antiga: qtdeAntiga,
+                        qtde_nova: qtdeNova,
+                        tipo: tipoMudanca
+                    });
+                }
             }
-
+            
             return false;
         });
+
+                
         
-        // 4. ZERAR O ESTOQUE ANTIGO
-        console.log('Zerando o estoque antes da atualização...');
-
-        await Estoque.update(
-
-            { qtde_sp: 0, qtde_sc: 0 },
-
-            { where: {}, transaction: transaction }
-
-        );
-
-        console.log('Estoque zerado com sucesso.');
 
         // 5. UPSERT EM LOTE
         await Estoque.bulkCreate(registrosParaUpsert, {
@@ -454,8 +679,24 @@ const saveStock = async (estoque) => {
             //order: [['modelo', 'ASC']],
             returning: true 
         });
-        
+
+
         await transaction.commit();
+
+        console.log(mudancasCriticas);
+        
+
+        
+        try {
+            await processCriticalUpdates(mudancasCriticas, access_token);
+
+        
+        } catch (apiError) {
+            // Este erro deve ser logado, mas NÃO deve reverter a transação.
+            console.error('[ERRO DE API] Falha ao processar atualizações críticas no ML (Após Commit):', apiError.message);
+            // Podemos continuar (não fazemos throw)
+        }
+
         
         rodasProcessadas = registrosParaUpsert.length;
 
@@ -475,7 +716,17 @@ const saveStock = async (estoque) => {
 };
 
 
+
+
+
+
+
+
+
+
+
 // =====================================================================
+
 
 
 
@@ -667,7 +918,7 @@ const mergeStockPrFromTemporary = async () => {
     const registrosTemporarios = await EstoqueTemporario.findAll({
         attributes: [...uniqueFields, 'qtde_pr'],
         // Filtramos apenas aqueles que têm quantidades positivas para evitar loops desnecessários
-        where: { qtde_pr: { [Op.gt]: 0 } }, 
+        //where: { qtde_pr: { [Op.gt]: 0 } }, 
         raw: true
     });
 
@@ -693,7 +944,9 @@ const mergeStockPrFromTemporary = async () => {
             const offset = normalizeString(tempRoda.offset);
             const acabamento = normalizeString(tempRoda.acabamento);
 
+ 
 
+    
             // 4. Montamos a condição de busca (WHERE) para a tabela Estoque principal
             // Usamos os campos normalizados para o matching
             const matchCondition = {
@@ -706,18 +959,42 @@ const mergeStockPrFromTemporary = async () => {
                 }
             };
 
+            const registroPrincipal = await Estoque.findOne({
+                attributes: ['id', 'qtde_pr'], // BUSCAR APENAS A PK
+                where: matchCondition,
+                transaction: transaction,
+                raw: true
+            });
+
+            if (!registroPrincipal) {
+                //if (isTarget) {
+                //    console.warn(`3. ❌ FALHA: Registro principal NÃO ENCONTRADO com esta chave. A falha NÃO é no UPDATE, mas no WHERE.`);
+                //}
+                continue;
+                
+            }
+
+
+            const qtdeAnterior = registroPrincipal.qtde_pr; // Valor de referência
+            const novoValor = tempRoda.qtde_pr;
+
             // 5. Executamos o UPDATE no Estoque principal (apenas para a linha que corresponde)
             const [updatedRows] = await Estoque.update(
-                { qtde_pr: tempRoda.qtde_pr }, 
+                { qtde_pr: novoValor }, 
                 { 
-                    where: matchCondition,
+                    where: { id: registroPrincipal.id },
                     transaction: transaction
                 }
             );
 
+
             if (updatedRows > 0) {
                 updatesRealizados += updatedRows;
+
+            }else {
+                console.log('linha não atualizada')
             }
+        
         }
 
         console.log('[Merge] Limpando valores NULL remanescentes em qtde_pr...');
@@ -742,6 +1019,7 @@ const mergeStockPrFromTemporary = async () => {
             message: `Merge de qtde_pr concluído. ${updatesRealizados} rodas atualizadas.`
         };
 
+    
     } catch (error) {
         await transaction.rollback();
         console.error('[Merge] Erro fatal durante o merge de estoque PR:', error);
