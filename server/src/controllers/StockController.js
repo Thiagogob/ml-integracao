@@ -2,6 +2,8 @@ const fs = require('fs');
 const pdfService = require('../services/pdf.service');
 const stockService = require('../services/stock.service');
 const meliService = require('../services/meli.service');
+const xlsx = require('xlsx');
+
 
 exports.uploadStockController = async (req, res) => {
     // A propriedade `req.file` é adicionada pelo middleware multer
@@ -102,5 +104,30 @@ exports.getRodasPedidosPage = async (req, res) => {
     } catch (err){
         console.error(err);
         return res.status(500).json({ error: 'Falha ao carregar detalhes das rodas para gerar pedido.' });
+    }
+};
+
+exports.uploadLocalStockController = async (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
+    }
+
+    try {
+        // 1. Lê o arquivo da memória ou do path (dependendo do seu multer)
+        const workbook = xlsx.readFile(req.file.path);
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        
+        // 2. Converte para JSON
+        const data = xlsx.utils.sheet_to_json(sheet);
+
+        // 3. Processa e salva no banco
+        await stockService.saveLocalStock(data);
+
+        return res.json({ message: "Estoque local processado e integrado com sucesso!" });
+
+    } catch (err) {
+        console.error("Erro ao processar planilha local:", err);
+        return res.status(500).json({ error: 'Falha ao processar o arquivo Excel.' });
     }
 };

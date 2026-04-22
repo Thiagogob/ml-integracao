@@ -14,6 +14,11 @@ router.post('/upload-pdf-sul',
     StockController.uploadStockSulController
 );
 
+router.post('/upload-local', 
+    upload.single('stock_local'), 
+    StockController.uploadLocalStockController
+);
+
 router.get('/detalhes-roda-simples/:sku',
     authMiddleware.protect,
     StockController.getRodasPedidosPage

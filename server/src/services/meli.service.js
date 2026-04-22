@@ -10,7 +10,7 @@ const ACCESS_TOKEN = process.env.ACCESS_TOKEN;
 const APP_ID = process.env.APP_ID;
 const DELAY_MS = 500;
 const INITIAL_RETRY_DELAY_MS = 2000; // 2 segundos
-const MAX_RETRIES = 3; // Limita a 3 tentativas totais
+const MAX_RETRIES = 12; // Limita a 3 tentativas totais
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -505,11 +505,22 @@ const updateEstoqueAnuncio = async (detalhesAnuncio, access_token, updatePayload
 
     const respostaJson = await resposta.json();
     const statusCode = resposta.status;
+    const isValidationError = statusCode === 400 && respostaJson.error === 'validation_error';
 
     if (!resposta.ok) {
 
+        if (isValidationError && respostaJson.cause?.some(c => c.cause_id === 201)) {
+             console.warn(`[ML API - 400 IGNORADO] Validação de imagem (Item ${mlItemId}) falhou. Pulando anúncio.`);
+             return { status: 400, message: 'Image validation bypassed.' };
+        }
+
         if (statusCode === 409) {
             console.warn(`[ML API - 409 IGNORADO] Conflito de concorrência detectado para ML ID ${detalhesAnuncio[0].ml_id}. Continuando o processo.`);
+            return { status: 409, message: 'Conflict ignored.' }; // Retorna sucesso silencioso
+        }
+
+        if (statusCode === 400) {
+            console.warn(`[ML API - 400 IGNORADO] Conflito de validação detectado para ML ID ${detalhesAnuncio[0].ml_id}. Continuando o processo.`);
             return { status: 409, message: 'Conflict ignored.' }; // Retorna sucesso silencioso
         }
 

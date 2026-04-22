@@ -168,11 +168,14 @@ const generateUpdatePayload = (detalhesAnuncio, detalhesEstoque) => {
 
     if (simpleItemPayload) {
         console.log("Payload Gerado (Simples):", simpleItemPayload);
+        console.log(simpleItemPayload)
+
         // Retorna APENAS o objeto simples
         return simpleItemPayload;
     } else {
         console.log("Payload Gerado (Variações):", variationsPayload);
         // Retorna APENAS o array de variações
+        console.log(variationsPayload)
         return variationsPayload;
     }
 

@@ -105,6 +105,10 @@ const Estoque = sequelize.define('Estoque', {
     qtde_pr: { 
         type: DataTypes.INTEGER
      },
+    qtde_local: { 
+        type: DataTypes.INTEGER, 
+        defaultValue: 0 
+    },
     sku: { type: DataTypes.TEXT },
 }, {
     tableName: 'estoque_rodas_distribuidora',

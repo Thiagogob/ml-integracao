@@ -477,253 +477,289 @@ const normalizeString = (str) => {
 // =====================================================================
 
 
-const saveStock = async (estoque, access_token, processCriticalUpdates) => {
+//const saveStock = async (estoque, access_token, processCriticalUpdates) => {
+//    const uniqueFields = ['modelo', 'aro', 'pcd', 'offset', 'acabamento'];
+//    const transaction = await sequelize.transaction();
+//    
+//    try {
+//        console.log("Iniciando a sincronização inteligente de estoque...");
+//
+//        // 1. PREPARAÇÃO DOS DADOS
+//        const registrosParaUpsert = estoque.map((roda) => {
+//            const nomeModeloCorrigido = fixModelName(roda.MODELO);
+//            const acabamentoCorrigido = fixAcabamento(roda.ACABAMENTO);
+//            let aroCorrigido = String(roda.ARO || '');
+//
+//            if (aroCorrigido.endsWith(',')) {
+//                 aroCorrigido = `${aroCorrigido}5`;
+//            }
+//            
+//            // GARANTIA NUMÉRICA: Se não for número, vira 0
+//            const qtde_sp = Number(roda.QTDE_SP) || 0;
+//            const qtde_sc = Number(roda.QTDE_SC) || 0;
+//            const qtde_pr = Number(roda.QTDE_PR) || 0;
+//
+//            const modelo = normalizeString(nomeModeloCorrigido);
+//            const aro = normalizeString(aroCorrigido); 
+//            const pcd = normalizeString(roda.PCD);
+//            const offset = normalizeString(roda.OFFSET);
+//            const acabamento = normalizeString(acabamentoCorrigido);
+//            const unique_key = `${modelo}|${aro}|${pcd}|${offset}|${acabamento}`;
+//
+//            return {
+//                modelo,
+//                aro,
+//                pcd,
+//                offset,
+//                acabamento,
+//                sku: normalizeString(roda.SKU),
+//                qtde_sp,
+//                qtde_sc,
+//                qtde_pr,
+//                unique_key
+//            };
+//        });
+//
+//        // --- DEDUPLICAÇÃO COM TRATAMENTO DE NaN ---
+//        const mapaDeduplicado = new Map();
+//        
+//        registrosParaUpsert.forEach(registro => {
+//            if (mapaDeduplicado.has(registro.unique_key)) {
+//                const existente = mapaDeduplicado.get(registro.unique_key);
+//                // Soma garantindo que valores nulos/NaN não quebrem o cálculo
+//                existente.qtde_sp = (existente.qtde_sp || 0) + (registro.qtde_sp || 0);
+//                existente.qtde_sc = (existente.qtde_sc || 0) + (registro.qtde_sc || 0);
+//                existente.qtde_pr = (existente.qtde_pr || 0) + (registro.qtde_pr || 0);
+//            } else {
+//                mapaDeduplicado.set(registro.unique_key, { ...registro });
+//            }
+//        });
+//        
+//        const registrosLimpos = Array.from(mapaDeduplicado.values());
+//
+//        // 2. PRÉ-VERIFICAÇÃO
+//        // IMPORTANTE: Use os registrosLimpos aqui para não enviar chaves duplicadas na query
+//        const chavesParaVerificar = registrosLimpos.map(r => r.unique_key);
+//        
+//        const orConditions = chavesParaVerificar.map(key => {
+//            const [modelo, aro, pcd, offset, acabamento] = key.split('|');
+//            return {
+//                [Op.and]: { 
+//                    modelo: sequelize.where(sequelize.fn('LOWER', sequelize.fn('TRIM', sequelize.col('modelo'))), modelo),
+//                    aro: sequelize.where(sequelize.fn('LOWER', sequelize.fn('TRIM', sequelize.col('aro'))), aro),
+//                    pcd: sequelize.where(sequelize.fn('LOWER', sequelize.fn('TRIM', sequelize.col('pcd'))), pcd),
+//                    offset: sequelize.where(sequelize.fn('LOWER', sequelize.fn('TRIM', sequelize.col('offset'))), offset),
+//                    acabamento: sequelize.where(sequelize.fn('LOWER', sequelize.fn('TRIM', sequelize.col('acabamento'))), acabamento),
+//                }
+//            };
+//        });
+//
+//        const rodasExistentes = await Estoque.findAll({
+//            attributes: [...uniqueFields, 'qtde_sp', 'qtde_sc', 'qtde_pr', 'sku'],
+//            where: { [Op.or]: orConditions },
+//            transaction: transaction,
+//            raw: true
+//        });
+//
+//        const estoqueAntigoMap = new Map();
+//        rodasExistentes.forEach(r => {
+//            const dbKey = `${normalizeString(r.modelo)}|${normalizeString(r.aro)}|${normalizeString(r.pcd)}|${normalizeString(r.offset)}|${normalizeString(r.acabamento)}`;
+//            // Garante que o que vem do banco também seja tratado como número
+//            estoqueAntigoMap.set(dbKey, { 
+//                qtde_sp: Number(r.qtde_sp) || 0, 
+//                qtde_sc: Number(r.qtde_sc) || 0, 
+//                qtde_pr: Number(r.qtde_pr) || 0, 
+//                sku: r.sku 
+//            });
+//        });
+//
+//        const mudancasCriticas = [];
+//        let novosModelos = 0;
+//        
+//        registrosLimpos.forEach(registro => {
+//            const key = registro.unique_key;
+//            const estoqueAntigo = estoqueAntigoMap.get(key);
+//
+//            if (!estoqueAntigo) {
+//                novosModelos++;
+//                mudancasCriticas.push({ 
+//                    sku: registro.sku, 
+//                    qtde_antiga: 0, 
+//                    qtde_nova: registro.qtde_sp + registro.qtde_sc + registro.qtde_pr,
+//                    tipo: 'REPOSIÇÃO'
+//                });
+//            } else {
+//                const qtdeAntiga = estoqueAntigo.qtde_sp + estoqueAntigo.qtde_sc + estoqueAntigo.qtde_pr;
+//                const qtdeNova = registro.qtde_sp + registro.qtde_sc + registro.qtde_pr;
+//
+//                if (qtdeAntiga !== qtdeNova) {
+//                    mudancasCriticas.push({
+//                        sku: estoqueAntigo.sku,
+//                        qtde_antiga: qtdeAntiga,
+//                        qtde_nova: qtdeNova,
+//                        tipo: qtdeNova > qtdeAntiga ? 'REPOSIÇÃO' : 'BAIXA'
+//                    });
+//                }
+//            }
+//        });
+//
+//        // 5. UPSERT EM LOTE
+//        await Estoque.bulkCreate(registrosLimpos, {
+//            updateOnDuplicate: ['qtde_sp', 'qtde_sc', 'qtde_pr'],
+//            transaction: transaction,
+//            returning: true 
+//        });
+//
+//        await transaction.commit();
+//
+//        try {
+//            await processCriticalUpdates(mudancasCriticas, access_token);
+//        } catch (apiError) {
+//            console.error('[ERRO DE API] Falha ao processar atualizações críticas no ML:', apiError.message);
+//        }
+//
+//        console.log(`\n--- SINCRONIZAÇÃO CONCLUÍDA ---`);
+//        console.log(`Modelos únicos: ${registrosLimpos.length}`);
+//
+//    } catch (error) {
+//        if (transaction) await transaction.rollback(); 
+//        console.error('Erro fatal ao sincronizar o estoque:', error);
+//        throw error;
+//    }
+//};
+//
+//
 
-    // Lista das colunas que identificam a roda (chave composta)
+
+
+
+
+
+// // =====================================================================
+
+
+const saveStock = async (estoque, access_token, processCriticalUpdates) => {
     const uniqueFields = ['modelo', 'aro', 'pcd', 'offset', 'acabamento'];
-    
-    // Inicia uma transação para garantir que a operação seja atômica
     const transaction = await sequelize.transaction();
     
     try {
         console.log("Iniciando a sincronização inteligente de estoque...");
 
-        // 1. PREPARAÇÃO DOS DADOS: Cria a lista de objetos para o Upsert
-        const registrosParaUpsert = estoque.map((roda, index) => {
-
-            // --- CORREÇÃO DE MODELOS INCOMPLETOS --
-
+        // 1. PREPARAÇÃO E NORMALIZAÇÃO DOS DADOS
+        const registrosParaUpsert = estoque.map((roda) => {
             const nomeModeloCorrigido = fixModelName(roda.MODELO);
-
-            // --- FIM DA CORREÇÃO DE MODELOS INCOMPLETOS --
-
-
-
-            // -- CORREÇÃO ACABAMENTO INCOMPLETO --
-
-                const acabamentoCorrigido = fixAcabamento(roda.ACABAMENTO);
-
-            // -- FIM DA CORREÇÃO ACABAMENTO INCOMPLETO --
-            
-
-
-
+            const acabamentoCorrigido = fixAcabamento(roda.ACABAMENTO);
             let aroCorrigido = String(roda.ARO || '');
-            
 
-
-            // --- CORREÇÃO DO CAMPO ARO (Padronização) ---
-
-            // 1. Regra de Negócio: Se o aro termina em vírgula (ex: '20x7,'), assume-se que é ',5' e corrige.
             if (aroCorrigido.endsWith(',')) {
-                
-                 aroCorrigido = `${aroCorrigido}5`; // '20x7,' vira '20x7,5'
-
+                 aroCorrigido = `${aroCorrigido}5`;
             }
-            // --- FIM DA CORREÇÃO DO CAMPO ARO ---
             
+            const qtde_sp = Number(roda.QTDE_SP) || 0;
+            const qtde_sc = Number(roda.QTDE_SC) || 0;
+            const qtde_pr = Number(roda.QTDE_PR) || 0;
 
-
-            // Normaliza cada campo da chave composta
             const modelo = normalizeString(nomeModeloCorrigido);
-
-            // CORREÇÃO ESSENCIAL: Usa o aroCorrigido e normaliza para a chave
             const aro = normalizeString(aroCorrigido); 
-
             const pcd = normalizeString(roda.PCD);
-
             const offset = normalizeString(roda.OFFSET);
-
             const acabamento = normalizeString(acabamentoCorrigido);
-
             const unique_key = `${modelo}|${aro}|${pcd}|${offset}|${acabamento}`;
 
-            //if (index < 5) {
-            //    console.log(`[DEBUG ENTRADA ${index}] Key Aro (Corrigido): ${aro} | Key Completa: ${unique_key}`);
-            //}
-
             return {
-                modelo: modelo,
-
-                aro: aro,
-
-                pcd: pcd,
-
-                offset: offset,
-
-                acabamento: acabamento,
-
-                sku: normalizeString(roda.SKU),
-
-                qtde_sp: roda.QTDE_SP,
-
-                qtde_sc: roda.QTDE_SC,
-
-                // Chave única normalizada para ser usada na comparação
-                unique_key: unique_key
+                modelo, aro, pcd, offset, acabamento,
+                sku: "", // O PDF não contém SKU, deixamos vazio para não sobrescrever o SKU do banco
+                qtde_sp, qtde_sc, qtde_pr,
+                unique_key
             };
         });
+
+        // 2. DEDUPLICAÇÃO DE REGISTROS
+        const mapaDeduplicado = new Map();
+        registrosParaUpsert.forEach(registro => {
+            if (mapaDeduplicado.has(registro.unique_key)) {
+                const existente = mapaDeduplicado.get(registro.unique_key);
+                existente.qtde_sp += registro.qtde_sp;
+                existente.qtde_sc += registro.qtde_sc;
+                existente.qtde_pr += registro.qtde_pr;
+            } else {
+                mapaDeduplicado.set(registro.unique_key, { ...registro });
+            }
+        });
         
-        // 2. PRÉ-VERIFICAÇÃO: Identifica quais rodas já existem no DB.
-        const chavesParaVerificar = registrosParaUpsert.map(r => r.unique_key);
-        
-        // Monta a condição OR para buscar todas as chaves de entrada no DB
+        const registrosLimpos = Array.from(mapaDeduplicado.values());
+
+        // 3. BUSCA DE SKUs EXISTENTES NO BANCO
+        const chavesParaVerificar = registrosLimpos.map(r => r.unique_key);
         const orConditions = chavesParaVerificar.map(key => {
-
             const [modelo, aro, pcd, offset, acabamento] = key.split('|');
-
             return {
                 [Op.and]: { 
-                    // Normaliza os dados do DB (TRIM e LOWER) para comparação
                     modelo: sequelize.where(sequelize.fn('LOWER', sequelize.fn('TRIM', sequelize.col('modelo'))), modelo),
-
                     aro: sequelize.where(sequelize.fn('LOWER', sequelize.fn('TRIM', sequelize.col('aro'))), aro),
-
                     pcd: sequelize.where(sequelize.fn('LOWER', sequelize.fn('TRIM', sequelize.col('pcd'))), pcd),
-
                     offset: sequelize.where(sequelize.fn('LOWER', sequelize.fn('TRIM', sequelize.col('offset'))), offset),
-
                     acabamento: sequelize.where(sequelize.fn('LOWER', sequelize.fn('TRIM', sequelize.col('acabamento'))), acabamento),
-
                 }
             };
         });
 
-        // Consulta o DB para encontrar todas as rodas existentes
-        const rodasExistentes = await Estoque.findAll({
-
-            attributes: [...uniqueFields, 'qtde_sp', 'qtde_sc', 'qtde_pr', 'sku'],
-
-            where: {
-                [Op.or]: orConditions 
-            },
-
+        const rodasNoBanco = await Estoque.findAll({
+            attributes: ['modelo', 'aro', 'pcd', 'offset', 'acabamento', 'sku'],
+            where: { [Op.or]: orConditions },
             transaction: transaction,
-
             raw: true
-
         });
 
-        // 🎯 2. CRIAÇÃO DE UM MAP DE REFERÊNCIA (Chave Única -> Dados Antigos)
-        // Isso permite buscar o estoque antigo de forma rápida
-        const estoqueAntigoMap = new Map();
-        
-        rodasExistentes.forEach(r => {
+        const estoqueDbMap = new Map();
+        rodasNoBanco.forEach(r => {
             const dbKey = `${normalizeString(r.modelo)}|${normalizeString(r.aro)}|${normalizeString(r.pcd)}|${normalizeString(r.offset)}|${normalizeString(r.acabamento)}`;
-            
-            // Armazenamos o objeto completo (quantidades antigas)
-            estoqueAntigoMap.set(dbKey, { qtde_sp: r.qtde_sp, qtde_sc: r.qtde_sc, qtde_pr: r.qtde_pr, sku: r.sku });
+            estoqueDbMap.set(dbKey, r.sku);
         });
 
-        const mudancasCriticas = [];
-
-        let novosModelos = 0;
+        // 4. PREPARAÇÃO DA LISTA DE ATUALIZAÇÃO EM MASSA (Nova Lógica)
+        const listaParaSincronizarML = [];
         
-        registrosParaUpsert.filter(registro => {
-            const key = registro.unique_key;
-            const estoqueAntigo = estoqueAntigoMap.get(key); // Estoque do DB (antigo)
+        registrosLimpos.forEach(registro => {
+            const skuExistente = estoqueDbMap.get(registro.unique_key);
 
-            // A. LÓGICA PARA MODELOS NOVOS
-            if (!estoqueAntigo) {
-                // Modelo NOVO detectado
-                console.log(`\n[MODELO NOVO DETECTADO] Inserindo: ${registro.modelo} ...`);
-                novosModelos++;
-                
-                // Tratar como MUDANÇA CRÍTICA: Estoque foi de 0 para X
-                mudancasCriticas.push({ 
-                    sku: registro.sku, 
-                    qtde_antiga: 0, 
-                    qtde_nova: registro.qtde_sp + registro.qtde_sc + registro.qtde_pr,
-                    tipo: 'REPOSIÇÃO'
+            // Se o modelo processado possui um SKU no banco, adicionamos à lista de atualização
+            if (skuExistente && skuExistente !== "") {
+                listaParaSincronizarML.push({
+                    sku: skuExistente
                 });
-                
-                return true;
-            } 
-            
-            // B. LÓGICA PARA COMPARAÇÃO DE ESTOQUE EXISTENTE
-            else {
-                const qtdeAntiga = estoqueAntigo.qtde_sp + estoqueAntigo.qtde_sc; // Soma antiga
-                const qtdeNova = registro.qtde_sp + registro.qtde_sc + registro.qtde_pr; // Soma nova
-
-                // 🎯 VERIFICAÇÃO DE MUDANÇA SIGNIFICATIVA (Qualquer mudança)
-                if (qtdeAntiga !== qtdeNova) {
-                    
-                    const tipoMudanca = qtdeNova > qtdeAntiga ? 'REPOSIÇÃO' : 'BAIXA';
-                    
-                    mudancasCriticas.push({
-                        sku: estoqueAntigo.sku, // Usamos o SKU do DB
-                        qtde_antiga: qtdeAntiga,
-                        qtde_nova: qtdeNova,
-                        tipo: tipoMudanca
-                    });
-                }
             }
-            
-            return false;
         });
 
-                
-        
-
-        // 5. UPSERT EM LOTE
-        await Estoque.bulkCreate(registrosParaUpsert, {
-
-            updateOnDuplicate: [
-                ...uniqueFields,
-
-                'qtde_sp',
-
-                'qtde_sc'
-            ],
-            transaction: transaction,
-            //order: [['modelo', 'ASC']],
-            returning: true 
+        // 5. ATUALIZAÇÃO DO BANCO DE DADOS
+        // Importante: Não incluímos 'sku' no updateOnDuplicate para preservar os SKUs já cadastrados
+        await Estoque.bulkCreate(registrosLimpos, {
+            updateOnDuplicate: ['qtde_sp', 'qtde_sc', 'qtde_pr'],
+            transaction: transaction
         });
-
 
         await transaction.commit();
 
-        console.log(mudancasCriticas);
-        
-
-        
-        try {
-            await processCriticalUpdates(mudancasCriticas, access_token);
-
-        
-        } catch (apiError) {
-            // Este erro deve ser logado, mas NÃO deve reverter a transação.
-            console.error('[ERRO DE API] Falha ao processar atualizações críticas no ML (Após Commit):', apiError.message);
-            // Podemos continuar (não fazemos throw)
+        // 6. DISPARO DA ATUALIZAÇÃO EM MASSA PARA O MERCADO LIVRE
+        if (listaParaSincronizarML.length > 0) {
+            try {
+                console.log(`[ML] Iniciando sincronização em massa de ${listaParaSincronizarML.length} SKUs...`);
+                await processCriticalUpdates(listaParaSincronizarML, access_token);
+            } catch (apiError) {
+                console.error('[ERRO DE API] Falha na atualização em massa do ML:', apiError.message);
+            }
         }
 
-        
-        rodasProcessadas = registrosParaUpsert.length;
-
-        const modelosAtualizados = rodasProcessadas - novosModelos;
-
         console.log(`\n--- SINCRONIZAÇÃO CONCLUÍDA ---`);
-        console.log(`Modelos no arquivo: ${rodasProcessadas}`);
-        console.log(`Novos modelos adicionados: ${novosModelos}`);
-        console.log(`Modelos atualizados: ${modelosAtualizados}`); 
-        console.log(`Estoque sincronizado por chave composta!`);
+        console.log(`Modelos processados: ${registrosLimpos.length}`);
+        console.log(`Anúncios enviados para atualização: ${listaParaSincronizarML.length}`);
 
     } catch (error) {
-        await transaction.rollback(); 
+        if (transaction) await transaction.rollback(); 
         console.error('Erro fatal ao sincronizar o estoque:', error);
         throw error;
     }
 };
-
-
-
-
-
-
-
-
-
-
 
 // =====================================================================
 
@@ -851,11 +887,74 @@ const normalizeModelCodes = async () => {
 
 
 
+//
+//
+//
+//
+//const getRoda = async (detalhesAnuncio) => {
+//    let quantidadeTotal;
+//    try{
+//        console.log("Capturando detalhes de estoque...")
+//        let skuRodas = [];
+//        let quantidadesDisponiveis = [];
+//
+//        for(const detalheAnuncio of detalhesAnuncio){
+//        
+//            skuRodas.push(detalheAnuncio.sku)
+//        
+//        }
+//        
+//
+//        for(const skuRoda of skuRodas){
+//
+//            let roda = await Estoque.findOne({
+//               where: {
+//                   sku: skuRoda
+//               },
+//                raw: true
+//            })
+//
+//            if(roda){
+//                quantidadeTotal = roda.qtde_sp 
+//                //+ roda.qtde_sc + roda.qtde_pr;
+//
+//                
+//            } else {
+//                quantidadeTotal = null
+//                console.warn(`[ESTOQUE] Não há sku correspondente no estoque da distribuidora para o SKU: ${skuRoda}`);
+//                return [];
+//            }
+//            
+//
+//            quantidadesDisponiveis.push({
+//                sku: skuRoda, // É bom salvar o SKU para referência
+//                quantidade: quantidadeTotal
+//            });
+//        }
+//
+//
+//        return quantidadesDisponiveis;
+//    }catch(error){
+//        console.error("Erro ao coletar quantidades disponíveis", error);
+//        throw error; // Lança o erro para o controller
+//    }
+//}
 
 
 
+// =====================================================================
+
+// /server/src/services/stock.service.js
 
 const getRoda = async (detalhesAnuncio) => {
+    
+    // ==========================================================
+    // 🎯 CONFIGURAÇÃO DE ESTOQUE ATUAL
+    // Deve ser o mesmo valor usado em subtrairRodasDoEstoque para consistência.
+    // Altere para 'true' para somar SC e PR, ou 'false' para usar APENAS SP.
+    const useFullStock = false; 
+    // ==========================================================
+
     let quantidadeTotal;
     try{
         console.log("Capturando detalhes de estoque...")
@@ -879,7 +978,16 @@ const getRoda = async (detalhesAnuncio) => {
             })
 
             if(roda){
-                quantidadeTotal = roda.qtde_sp + roda.qtde_sc + roda.qtde_pr;
+                
+                // --- CÁLCULO DE QUANTIDADE TOTAL CONDICIONAL ---
+                if (useFullStock) {
+                    // Soma SP + SC + PR
+                    quantidadeTotal = roda.qtde_sp + roda.qtde_sc + roda.qtde_pr + roda.qtde_loca;
+                } else {
+                    // Apenas SP (Configuração atual do cliente)
+                    quantidadeTotal = roda.qtde_sp + roda.qtde_local;
+                }
+                // --- FIM DO CÁLCULO ---
 
                 
             } else {
@@ -902,11 +1010,6 @@ const getRoda = async (detalhesAnuncio) => {
         throw error; // Lança o erro para o controller
     }
 }
-
-
-
-
-
 
 // ==============================================================================================================================
 
@@ -1032,9 +1135,125 @@ const mergeStockPrFromTemporary = async () => {
 
 // ==============================================================================================================================
 
-const subtrairRodasDoEstoque = async (sku, quantidadeABaixar) => {
+//const subtrairRodasDoEstoque = async (sku, quantidadeABaixar) => {
+//
+//    
+//    // Usamos uma transação para garantir que a baixa seja atômica
+//    const transaction = await sequelize.transaction();
+//    
+//    try {
+//        console.log(`[BAIXA ESTOQUE] Iniciando baixa de ${quantidadeABaixar} unidades para SKU: ${sku}`);
+//
+//        // 1. Busca os registros para verificar o estoque atual
+//        const rodas = await Estoque.findAll({
+//            where: { sku: sku },
+//            transaction: transaction,
+//            raw: true
+//        });
+//
+//        if (rodas.length === 0) {
+//            console.warn(`[BAIXA ESTOQUE] SKU '${sku}' não encontrado na tabela de estoque. Nenhuma baixa realizada.`);
+//            await transaction.rollback();
+//            return;
+//        }
+//
+//        // Assumimos que o SKU só tem uma entrada no DB, mas usamos o for para iterar sobre o array
+//        for (const roda of rodas) {
+//            
+//            const estoqueAtualTotal = roda.qtde_sp 
+//            //+ roda.qtde_sc + roda.qtde_pr;
+//            
+//            if (estoqueAtualTotal < quantidadeABaixar) {
+//                 console.warn(`[BAIXA ESTOQUE] Estoque insuficiente (${estoqueAtualTotal} unid.) para a baixa de ${quantidadeABaixar} unid. para SKU: ${sku}.`);
+//                 // Não lançamos erro, mas pulamos a baixa
+//
+//                 await transaction.rollback(); // 
+//                 return;
+//                  
+//            }
+//            
+//            // Variáveis que guardarão as novas quantidades
+//
+//            let restanteABaixar = quantidadeABaixar;
+//
+//            let novaQtdeSP = roda.qtde_sp;
+//            let novaQtdeSC = roda.qtde_sc;
+//            let novaQtdePR = roda.qtde_pr;
+//
+//            let logBaixa = [];
+//            
+//            // --- LÓGICA DE PRIORIZAÇÃO DA BAIXA ---
+//            
+//            // 1. BAIXA EM SÃO PAULO (SP)
+//            if (restanteABaixar > 0) {
+//                const baixadaSP = Math.min(restanteABaixar, roda.qtde_sp);
+//                novaQtdeSP = roda.qtde_sp - baixadaSP;
+//                restanteABaixar -= baixadaSP;
+//                if (baixadaSP > 0) logBaixa.push(`${baixadaSP} unid. de SP`);
+//            }
+//            
+//            // 2. BAIXA EM SANTA CATARINA (SC)
+//            if (restanteABaixar > 0) {
+//                const baixadaSC = Math.min(restanteABaixar, roda.qtde_sc);
+//                novaQtdeSC = roda.qtde_sc - baixadaSC;
+//                restanteABaixar -= baixadaSC;
+//                if (baixadaSC > 0) logBaixa.push(`${baixadaSC} unid. de SC`);
+//            }
+//
+//            // 3. BAIXA NO PARANÁ (PR)
+//            if (restanteABaixar > 0) {
+//                const baixadaPR = Math.min(restanteABaixar, roda.qtde_pr);
+//                novaQtdePR = roda.qtde_pr - baixadaPR;
+//                restanteABaixar -= baixadaPR;
+//                if (baixadaPR > 0) logBaixa.push(`${baixadaPR} unid. de PR`);
+//            }
+//
+//            // --- Verificação Final ---
+//            if (restanteABaixar > 0) {
+//                // Esta condição NÃO deve ser atingida devido à checagem inicial de estoque total
+//                console.error("[BAIXA ESTOQUE] ERRO LÓGICO: Falha ao subtrair todas as unidades!");
+//                await transaction.rollback();
+//                return;
+//            }
+//
+//            console.log(`[BAIXA ESTOQUE] Baixando ${quantidadeABaixar} unid. com a seguinte composição: ${logBaixa.join(' + ')}.`);
+//            
+//            // --- Execução da Atualização ---
+//            await Estoque.update(
+//                { 
+//                    qtde_sp: novaQtdeSP,
+//                    qtde_sc: novaQtdeSC,
+//                    qtde_pr: novaQtdePR
+//                },
+//                { 
+//                    where: { id: roda.id }, 
+//                    transaction: transaction 
+//                }
+//            );
+//        }
+//        
+//        await transaction.commit(); // Confirma a transação
+//        
+//        console.log(`[BAIXA ESTOQUE] Baixa concluída para SKU: ${sku}. 4 unidades subtraídas com sucesso para SKU: ${sku}`);
+//
+//    } catch (error) {
+//        await transaction.rollback(); // Desfaz a transação em caso de erro
+//        console.error(`Erro fatal durante a baixa de estoque do SKU ${sku}:`, error);
+//        throw error;
+//    }
+//};
 
+// ==============================================================================================================================
+
+const subtrairRodasDoEstoque = async (sku, quantidadeABaixar) => {
     
+    // ==========================================================
+    //  CONFIGURAÇÃO DE ESTOQUE ATUAL
+    // Altere para 'true' para incluir SC e PR na baixa, ou 'false' para usar APENAS SP.
+    const useFullStock = false; 
+    // ==========================================================
+
+
     // Usamos uma transação para garantir que a baixa seja atômica
     const transaction = await sequelize.transaction();
     
@@ -1057,30 +1276,34 @@ const subtrairRodasDoEstoque = async (sku, quantidadeABaixar) => {
         // Assumimos que o SKU só tem uma entrada no DB, mas usamos o for para iterar sobre o array
         for (const roda of rodas) {
             
-            const estoqueAtualTotal = roda.qtde_sp + roda.qtde_sc + roda.qtde_pr;
+            let estoqueAtualTotal;
+            
+            // --- VERIFICAÇÃO DE ESTOQUE TOTAL ---
+            if (useFullStock) {
+                // Opção 1: Estoque completo (SP + SC + PR)
+                estoqueAtualTotal = roda.qtde_sp + roda.qtde_sc + roda.qtde_pr;
+            } else {
+                // Opção 2: Apenas estoque de SP (Atual preferência do cliente)
+                estoqueAtualTotal = roda.qtde_sp;
+            }
             
             if (estoqueAtualTotal < quantidadeABaixar) {
                  console.warn(`[BAIXA ESTOQUE] Estoque insuficiente (${estoqueAtualTotal} unid.) para a baixa de ${quantidadeABaixar} unid. para SKU: ${sku}.`);
-                 // Não lançamos erro, mas pulamos a baixa
-
-                 await transaction.rollback(); // 
+                 await transaction.rollback(); 
                  return;
-                  
             }
             
             // Variáveis que guardarão as novas quantidades
-
             let restanteABaixar = quantidadeABaixar;
-
             let novaQtdeSP = roda.qtde_sp;
             let novaQtdeSC = roda.qtde_sc;
             let novaQtdePR = roda.qtde_pr;
-
             let logBaixa = [];
             
-            // --- LÓGICA DE PRIORIZAÇÃO DA BAIXA ---
             
-            // 1. BAIXA EM SÃO PAULO (SP)
+            // --- LÓGICA DE PRIORIZAÇÃO DA BAIXA (Condicional) ---
+            
+            // 1. BAIXA EM SÃO PAULO (SP) - SEMPRE PRIORITÁRIO
             if (restanteABaixar > 0) {
                 const baixadaSP = Math.min(restanteABaixar, roda.qtde_sp);
                 novaQtdeSP = roda.qtde_sp - baixadaSP;
@@ -1088,25 +1311,27 @@ const subtrairRodasDoEstoque = async (sku, quantidadeABaixar) => {
                 if (baixadaSP > 0) logBaixa.push(`${baixadaSP} unid. de SP`);
             }
             
-            // 2. BAIXA EM SANTA CATARINA (SC)
-            if (restanteABaixar > 0) {
-                const baixadaSC = Math.min(restanteABaixar, roda.qtde_sc);
-                novaQtdeSC = roda.qtde_sc - baixadaSC;
-                restanteABaixar -= baixadaSC;
-                if (baixadaSC > 0) logBaixa.push(`${baixadaSC} unid. de SC`);
-            }
+            if (useFullStock) {
+                // 2. BAIXA EM SANTA CATARINA (SC)
+                if (restanteABaixar > 0) {
+                    const baixadaSC = Math.min(restanteABaixar, roda.qtde_sc);
+                    novaQtdeSC = roda.qtde_sc - baixadaSC;
+                    restanteABaixar -= baixadaSC;
+                    if (baixadaSC > 0) logBaixa.push(`${baixadaSC} unid. de SC`);
+                }
 
-            // 3. BAIXA NO PARANÁ (PR)
-            if (restanteABaixar > 0) {
-                const baixadaPR = Math.min(restanteABaixar, roda.qtde_pr);
-                novaQtdePR = roda.qtde_pr - baixadaPR;
-                restanteABaixar -= baixadaPR;
-                if (baixadaPR > 0) logBaixa.push(`${baixadaPR} unid. de PR`);
+                // 3. BAIXA NO PARANÁ (PR)
+                if (restanteABaixar > 0) {
+                    const baixadaPR = Math.min(restanteABaixar, roda.qtde_pr);
+                    novaQtdePR = roda.qtde_pr - baixadaPR;
+                    restanteABaixar -= baixadaPR;
+                    if (baixadaPR > 0) logBaixa.push(`${baixadaPR} unid. de PR`);
+                }
             }
+            // --- FIM DA LÓGICA DE PRIORIZAÇÃO ---
 
             // --- Verificação Final ---
             if (restanteABaixar > 0) {
-                // Esta condição NÃO deve ser atingida devido à checagem inicial de estoque total
                 console.error("[BAIXA ESTOQUE] ERRO LÓGICO: Falha ao subtrair todas as unidades!");
                 await transaction.rollback();
                 return;
@@ -1118,7 +1343,8 @@ const subtrairRodasDoEstoque = async (sku, quantidadeABaixar) => {
             await Estoque.update(
                 { 
                     qtde_sp: novaQtdeSP,
-                    qtde_sc: novaQtdeSC,
+                    // *** QUANDO useFullStock É false, qtde_sc e qtde_pr são definidos com o valor antigo, mantendo-o intacto. ***
+                    qtde_sc: novaQtdeSC, 
                     qtde_pr: novaQtdePR
                 },
                 { 
@@ -1130,7 +1356,7 @@ const subtrairRodasDoEstoque = async (sku, quantidadeABaixar) => {
         
         await transaction.commit(); // Confirma a transação
         
-        console.log(`[BAIXA ESTOQUE] Baixa concluída para SKU: ${sku}. 4 unidades subtraídas com sucesso para SKU: ${sku}`);
+        console.log(`[BAIXA ESTOQUE] Baixa concluída para SKU: ${sku}. ${quantidadeABaixar} unidades subtraídas com sucesso.`);
 
     } catch (error) {
         await transaction.rollback(); // Desfaz a transação em caso de erro
@@ -1279,6 +1505,64 @@ const getRodaDetailsBySku = async (sku) => {
     }
 }
 
+// ==============================================================================================================================
+
+const saveLocalStock = async (dadosPlanilha) => {
+    const transaction = await sequelize.transaction();
+    const skusNaoEncontrados = [];
+    let skusAtualizados = 0;
+    
+    try {
+        console.log("Iniciando atualização de estoque local...");
+
+        // 1. Zera o estoque local antigo para garantir fidelidade à nova planilha
+        await Estoque.update({ qtde_local: 0 }, { where: {}, transaction });
+
+        for (const item of dadosPlanilha) {
+            // Normaliza o SKU para bater com o padrão do banco (trim e lowercase)
+            const skuOriginal = item.SKU;
+            const skuNormalizado = skuOriginal;
+            const quantidade = parseInt(item.QUANTIDADE) || 0;
+
+            if (skuNormalizado) {
+                // Tenta atualizar a coluna qtde_local apenas se o SKU existir
+                const [rowsAffected] = await Estoque.update(
+                    { qtde_local: quantidade },
+                    { 
+                        where: { sku: skuNormalizado },
+                        transaction 
+                    }
+                );
+
+                if (rowsAffected > 0) {
+                    skusAtualizados++;
+                } else {
+                    // Adiciona ao log de ignorados se não houver correspondência no banco
+                    skusNaoEncontrados.push(skuOriginal);
+                }
+            }
+        }
+
+        await transaction.commit();
+
+        // --- EXIBIÇÃO DO LOG ---
+        console.log(`\n--- RESUMO DO PROCESSO LOCAL ---`);
+        console.log(`✅ SKUs atualizados no banco: ${skusAtualizados}`);
+        
+        if (skusNaoEncontrados.length > 0) {
+            console.warn(`⚠️ SKUs ignorados (não encontrados no banco): ${skusNaoEncontrados.length}`);
+            console.log(`Lista de SKUs ignorados:`, skusNaoEncontrados);
+        } else {
+            console.log(`✨ Todos os SKUs da planilha foram encontrados no banco.`);
+        }
+        
+    } catch (error) {
+        if (transaction) await transaction.rollback();
+        console.error("❌ Erro fatal ao salvar estoque local:", error);
+        throw error;
+    }
+};
+
 // Exporta as funções para serem usadas no controller
 module.exports = {
     parseTxtToWheels,
@@ -1290,5 +1574,6 @@ module.exports = {
     subtrairRodasDeUmAnuncioDuasTalas,
     normalizeModelCodes,
     mergeStockPrFromTemporary,
-    getRodaDetailsBySku
+    getRodaDetailsBySku,
+    saveLocalStock
 };
