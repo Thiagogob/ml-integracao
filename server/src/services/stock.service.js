@@ -12,8 +12,9 @@ function parseTxtToWheels(text) {
     const lines = text.trim().split('\n');
     const results = [];
 
-    // O seu regex, inalterado
-    const pattern = /(\S+)\s+([\dXx,\.]+)\s+([\dXx\/-]+)\s+(-?\d{1,3})\s+(.*?)\s+(\d+)\s+(\d+)$/;
+    // Suporta modelos de uma ou duas palavras (ex: ALFA ROMEO, FUCHS 911, POLO GTI).
+    // O lookahead (?![0-9]+[xX]) impede que o ARO (17X7) seja capturado como segunda palavra do modelo.
+    const pattern = /([A-Z][A-Z0-9\-]*(?:\s(?![0-9]+[xX])[A-Z0-9]+)?)\s+([\dXx,\.]+)\s+([\dXx\/-]+)\s+(-?\d{1,3})\s+(.*?)\s+(\d+)\s+(\d+)$/;
 
     for (const line of lines) {
         if (!line.trim()) continue;
@@ -198,41 +199,77 @@ const fixModelName = (modelName) => {
     switch (name) {
         case 'morga':
         case 'morg':
-            return 'morgan'; 
-        
+            return 'morgan';
+
         case 'orbita':
             return 'orbital';
 
         case 'newsu':
+        case 'newsunline':
             return 'newsun';
 
         case 'porsc':
+        case 'porsche 914':
             return 'porsch';
-        
+
         case 'samps':
+        case 'sampson':
             return 'sampso';
 
         case 'stroll':
+        case 'stroller':
             return 'strolle';
 
         case 'discov':
+        case 'discovery':
             return 'discove';
-        
+
         case 'ballin':
             return 'ballina';
 
         case 'silver':
+        case 'silverado':
             return 'silvera';
 
         case 'summe':
             return 'summer';
 
         case 'brw15':
+        case 'brw1570':
             return 'brw157';
 
+        case 'brw1810':
+            return 'brw18';
+
+        case 'brw1860':
+            return 'brw186';
+
+        case 'brw2220':
+            return 'brw222';
+
+        case 'alfa romeo':
+            return 'alfa';
+
+        case 'centauro':
+            return 'centau';
+
+        case 'fuchs 911':
+            return 'fuchs';
+
+        case 'mercedes rs03':
+            return 'merced';
+
+        case 'mtb l200':
+            return 'mtb';
+
+        case 'polo gti':
+            return 'polo';
+
+        case 'tarantula':
+            return 'tarant';
 
         default:
-            return name; 
+            return name;
     }
 };
 
@@ -688,6 +725,66 @@ const saveStock = async (estoque, access_token, processCriticalUpdates) => {
         });
         
         const registrosLimpos = Array.from(mapaDeduplicado.values());
+
+        // 2B. CORREÇÃO DE ACABAMENTOS TRUNCADOS
+        // O novo PDF tem colunas mais estreitas: "BD (PRETO DIAMANTADO)" vira "BD (PRETO".
+        // Para cada registro com parêntese aberto mas não fechado, busca o valor real no banco
+        // usando LIKE constrangido por (modelo, aro, pcd, offset), que é sempre unívoco.
+        const truncados = registrosLimpos.filter(r => r.acabamento.includes('(') && !r.acabamento.includes(')'));
+
+        for (const registro of truncados) {
+            const exato = await Estoque.findOne({
+                attributes: ['acabamento'],
+                where: {
+                    modelo: registro.modelo,
+                    aro: registro.aro,
+                    pcd: registro.pcd,
+                    offset: registro.offset,
+                    acabamento: registro.acabamento
+                },
+                transaction,
+                raw: true
+            });
+
+            if (!exato) {
+                const porPrefixo = await Estoque.findOne({
+                    attributes: ['acabamento'],
+                    where: {
+                        modelo: registro.modelo,
+                        aro: registro.aro,
+                        pcd: registro.pcd,
+                        offset: registro.offset,
+                        acabamento: { [Op.like]: `${registro.acabamento}%` }
+                    },
+                    order: [[sequelize.literal('LENGTH(acabamento)'), 'DESC']],
+                    transaction,
+                    raw: true
+                });
+
+                if (porPrefixo) {
+                    const acabamentoCompleto = normalizeString(porPrefixo.acabamento);
+                    registro.acabamento = acabamentoCompleto;
+                    registro.unique_key = `${registro.modelo}|${registro.aro}|${registro.pcd}|${registro.offset}|${acabamentoCompleto}`;
+                }
+            }
+        }
+
+        // Re-deduplica caso correções tenham gerado chaves coincidentes
+        if (truncados.length > 0) {
+            const mapaFinal = new Map();
+            registrosLimpos.forEach(r => {
+                if (mapaFinal.has(r.unique_key)) {
+                    const ex = mapaFinal.get(r.unique_key);
+                    ex.qtde_sp += r.qtde_sp;
+                    ex.qtde_sc += r.qtde_sc;
+                    ex.qtde_pr += r.qtde_pr;
+                } else {
+                    mapaFinal.set(r.unique_key, { ...r });
+                }
+            });
+            registrosLimpos.length = 0;
+            mapaFinal.forEach(r => registrosLimpos.push(r));
+        }
 
         // 3. BUSCA DE SKUs EXISTENTES NO BANCO
         const chavesParaVerificar = registrosLimpos.map(r => r.unique_key);
