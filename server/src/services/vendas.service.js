@@ -4,6 +4,7 @@ const syncControlService = require('./syncControl.service');
 const meliService = require('./meli.service');
 const { listarVendas } = require('../controllers/VendasController');
 const { Op, fn, col, literal } = require('sequelize');
+const STORE_ID = parseInt(process.env.STORE_ID, 10);
 
 
 const marcarComoColetada = async (idVenda) => {
@@ -50,12 +51,12 @@ const getTop5RodasVendidas = async () => {
                 }],
 
                 where: {
-
+                    store_id: STORE_ID,
                     data: {
-                        [Op.gte]: quinzeDiasAtras.toISOString() 
+                        [Op.gte]: quinzeDiasAtras.toISOString()
                     }
                 },
-                group: ['Venda.sku', 'estoque_associado.id'], // Agrupa os resultados pelo SKU
+                group: ['Venda.sku', 'estoque_associado.id'],
                 order: [[literal('total_vendido'), 'DESC']], // Ordena pela maior quantidade
                 limit: 5, // Limita aos 5 primeiros
                 raw: true, // Retorna objetos JSON simples para fácil mapeamento
@@ -107,9 +108,9 @@ const indiceAtencaoLiteral = literal(`
                 }],
                 
                 where: {
-                    // Filtro 2: Apenas vendas dos últimos 15 dias
+                    store_id: STORE_ID,
                     data: {
-                        [Op.gte]: quinzeDiasAtras.toISOString() 
+                        [Op.gte]: quinzeDiasAtras.toISOString()
                     }
                 },
                 
@@ -159,6 +160,7 @@ const listarTodasAsVendas = async () => {
             const vendas = await Venda.findAll({
             
             where: {
+                    store_id: STORE_ID,
                     coletada: false,
                 },
             attributes: [
@@ -302,12 +304,13 @@ const salvarVendas = async (vendas) => {
                             
             registrosParaInserir.push({
                     data: venda.date_closed,
-                    id_venda: venda.id, 
+                    id_venda: venda.id,
                     id_ml: venda.order_items[0].item.id,
                     sku: venda.order_items[0].item.seller_sku,
                     valor: venda.order_items[0].unit_price,
                     comissao: venda.order_items[0].sale_fee,
-                    quantidade: venda.order_items[0].requested_quantity.value
+                    quantidade: venda.order_items[0].requested_quantity.value,
+                    store_id: STORE_ID
                 });
 
 
@@ -443,8 +446,9 @@ const countDailyRodasVendidas = async() => {
         
         // 2. CONSULTA SIMPLES: Buscar todas as vendas do dia (Sem JOIN)
         const vendasDoDia = await Venda.findAll({
-            attributes: ['id', 'sku', 'id_venda', 'data'], // Incluindo 'id_venda' e 'data' para o log
+            attributes: ['id', 'sku', 'id_venda', 'data'],
             where: {
+                store_id: STORE_ID,
                 data: {
                     [Op.between]: [startOfToday, endOfToday]
                 }

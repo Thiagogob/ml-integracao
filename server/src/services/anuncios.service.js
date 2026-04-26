@@ -2,6 +2,7 @@ require('dotenv').config();
 const fs = require('fs').promises;
 const path = require('path');
 const { Anuncio, sequelize } = require('../config/database');
+const STORE_ID = parseInt(process.env.STORE_ID, 10);
 
 const salvarAnuncios = async (anuncios) => {
 
@@ -15,7 +16,7 @@ const salvarAnuncios = async (anuncios) => {
     };
 
     try {
-        await Anuncio.destroy({ where: {} })
+        await Anuncio.destroy({ where: { store_id: STORE_ID } })
 
         let skusSalvos = 0;
         let registrosParaInserir = [];
@@ -34,7 +35,8 @@ const salvarAnuncios = async (anuncios) => {
                     sku: skuData.sku,
                     quantidade: skuData.quantidade,
                     categoria: anuncio.categoria,
-                    isUnitario: isUnitarioValue
+                    isUnitario: isUnitarioValue,
+                    store_id: STORE_ID
             };
             registrosParaInserir.push(novoRegistro);
             skusSalvos++    
@@ -56,8 +58,9 @@ const getAnuncio = async (id_anuncio) => {
 
 
         const arrayAnuncio = await Anuncio.findAll({
-            where: { 
-                ml_id: id_anuncio
+            where: {
+                ml_id: id_anuncio,
+                store_id: STORE_ID
             },
             raw: true
          });
@@ -87,8 +90,9 @@ const getAnunciosBySku = async (sku) => {
         //console.log("Capturando anúncio...");
 
         const arrayAnuncios = await Anuncio.findAll({
-            where: { 
-                sku: sku
+            where: {
+                sku: sku,
+                store_id: STORE_ID
             },
             raw: true
          });

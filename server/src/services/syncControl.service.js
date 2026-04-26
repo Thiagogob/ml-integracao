@@ -2,8 +2,8 @@
 const { SyncControl } = require('../config/database');
 const { Op } = require('sequelize');
 
-// A chave fixa que identifica o registro de controle de vendas no DB
 const CHECKPOINT_ID = 'last_sale_sync';
+const STORE_ID = parseInt(process.env.STORE_ID, 10);
 
 /**
  * Busca o timestamp da última sincronização bem-sucedida de vendas.
@@ -12,8 +12,7 @@ const CHECKPOINT_ID = 'last_sale_sync';
 const getCheckpoint = async () => {
     try {
 
-        // Busca o registro onde a chave é 'last_sale_sync'
-        const controlRecord = await SyncControl.findByPk(CHECKPOINT_ID);
+        const controlRecord = await SyncControl.findOne({ where: { id: CHECKPOINT_ID, store_id: STORE_ID } });
         
         if (controlRecord && controlRecord.last_timestamp) {
             // Retorna o timestamp em formato ISO para ser usado na URL da API do ML
@@ -36,16 +35,12 @@ const getCheckpoint = async () => {
 const updateCheckpoint = async (newTimestamp) => {
     try {
         
-        const updateValue = { 
-            id: CHECKPOINT_ID, 
-            last_timestamp: new Date(newTimestamp) 
-        };
-        
-        // Usa upsert (encontra ou cria, depois atualiza)
-        await SyncControl.upsert(updateValue, {
-            where: { id: CHECKPOINT_ID },
-            conflictFields: ['id'] // Define a chave primária para evitar conflito
-        });
+        const record = await SyncControl.findOne({ where: { id: CHECKPOINT_ID, store_id: STORE_ID } });
+        if (record) {
+            await record.update({ last_timestamp: new Date(newTimestamp) });
+        } else {
+            await SyncControl.create({ id: CHECKPOINT_ID, store_id: STORE_ID, last_timestamp: new Date(newTimestamp) });
+        }
         
         console.log(`[Checkpoint] Ponto de sincronização atualizado para: ${new Date(newTimestamp).toISOString()}`);
 

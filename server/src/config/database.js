@@ -44,8 +44,9 @@ const Venda = sequelize.define('Venda', {
     coletada: {
         type: DataTypes.BOOLEAN,
         allowNull: false,
-        defaultValue: false // Por padrão, a roda não foi coletada
-    }
+        defaultValue: false
+    },
+    store_id: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 }
 }, {
     tableName: 'vendas_ml',
     timestamps: false
@@ -159,6 +160,7 @@ const Token = sequelize.define('Token', {
     },
     access_token: { type: DataTypes.TEXT },
     refresh_token: { type: DataTypes.TEXT },
+    store_id: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 }
 }, {
     tableName: 'tokens_ml',
     timestamps: false
@@ -178,7 +180,8 @@ const Anuncio = sequelize.define('Anuncio', {
     sku: { type: DataTypes.TEXT },
     quantidade: { type: DataTypes.INTEGER },
     isUnitario: { type: DataTypes.BOOLEAN },
-    categoria: {type: DataTypes.TEXT},
+    categoria: { type: DataTypes.TEXT },
+    store_id: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 }
 }, {
     tableName: 'anuncios',
     timestamps: false
@@ -191,10 +194,11 @@ const SyncControl = sequelize.define('SyncControl', {
         primaryKey: true
     },
     // Armazena a data/hora do último processamento bem-sucedido
-    last_timestamp: { 
+    last_timestamp: {
         type: DataTypes.DATE,
-        allowNull: true // Pode ser nulo na primeira execução
+        allowNull: true
     },
+    store_id: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 }
 }, {
     tableName: 'sync_control',
     timestamps: false

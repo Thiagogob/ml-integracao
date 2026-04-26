@@ -8,6 +8,7 @@ const SELLER_ID = process.env.SELLER_ID;
 const SECRET_KEY = process.env.SECRET_KEY;
 const ACCESS_TOKEN = process.env.ACCESS_TOKEN;
 const APP_ID = process.env.APP_ID;
+const STORE_ID = parseInt(process.env.STORE_ID, 10);
 const DELAY_MS = 500;
 const INITIAL_RETRY_DELAY_MS = 2000; // 2 segundos
 const MAX_RETRIES = 12; // Limita a 3 tentativas totais
@@ -17,7 +18,7 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 const getAuth = async () => {
     try {
         // 1. Obtém o refresh_token do banco de dados usando a função 'all'
-        const tokenRecord = await Token.findOne({ where: { id: 1 } });
+        const tokenRecord = await Token.findOne({ where: { store_id: STORE_ID } });
 
 
         if (!tokenRecord || !tokenRecord.refresh_token) {
@@ -61,12 +62,12 @@ const getAuth = async () => {
 
         
         await Token.update(
-            { 
-                refresh_token: resposta_json.refresh_token, 
-                access_token: resposta_json.access_token 
+            {
+                refresh_token: resposta_json.refresh_token,
+                access_token: resposta_json.access_token
             },
-            { 
-                where: { id: 1 } 
+            {
+                where: { store_id: STORE_ID }
             }
         );
 
@@ -86,7 +87,7 @@ const getAuth = async () => {
 const authTest = async () => {
    try {
         // 1. Busca o token usando o Modelo. O método findOne retorna o objeto Token.
-        const resultado = await Token.findOne({ where: { id: 1 } });
+        const resultado = await Token.findOne({ where: { store_id: STORE_ID } });
         
         // Se o resultado for nulo (tabela vazia), o Sequelize retorna null.
         if (!resultado || !resultado.access_token) {
