@@ -559,8 +559,6 @@ const processCriticalUpdates = async(mudancasCriticas,access_token) => {
 
                         const detalhesEstoque = await stockService.getRoda(detalhesAnuncio);
 
-                        console.log(detalhesEstoque)
-
                         const updatePayload = anunciosService.generateUpdatePayload(detalhesAnuncio, detalhesEstoque)
 
                         await delay(DELAY_MS);

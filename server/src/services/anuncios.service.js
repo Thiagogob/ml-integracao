@@ -15,14 +15,7 @@ const salvarAnuncios = async (anuncios) => {
     };
 
     try {
-        console.log("Iniciando o salvamento de anúncios no banco de dados...");
-        
-
-
-        console.log("Apagando dados existentes na tabela 'anuncios'...");
         await Anuncio.destroy({ where: {} })
-
-        console.log("Dados anteriores apagados com sucesso.");
 
         let skusSalvos = 0;
         let registrosParaInserir = [];
@@ -61,7 +54,6 @@ const getAnuncio = async (id_anuncio) => {
     try{
         let detalhesAnuncio = [];
 
-        console.log("Capturando anúncio...");
 
         const arrayAnuncio = await Anuncio.findAll({
             where: { 
@@ -124,7 +116,6 @@ const getAnunciosBySku = async (sku) => {
 
 const generateUpdatePayload = (detalhesAnuncio, detalhesEstoque) => {
 
-    console.log("Gerando payload... ")
 
     // 1. Cria um mapa rápido de SKU -> Quantidade
     // Isso transforma o array de estoque em um objeto { 'SKU_A': 100, 'SKU_B': 16, ... }
@@ -167,15 +158,8 @@ const generateUpdatePayload = (detalhesAnuncio, detalhesEstoque) => {
         //console.log(`[Cálculo Estoque] SKU: ${detalhe.sku} | Bruto: ${quantidadeBruta} | É Unitário: ${detalhe.isUnitario} | Final: ${quantidadeFinal}`);
 
     if (simpleItemPayload) {
-        console.log("Payload Gerado (Simples):", simpleItemPayload);
-        console.log(simpleItemPayload)
-
-        // Retorna APENAS o objeto simples
         return simpleItemPayload;
     } else {
-        console.log("Payload Gerado (Variações):", variationsPayload);
-        // Retorna APENAS o array de variações
-        console.log(variationsPayload)
         return variationsPayload;
     }
 

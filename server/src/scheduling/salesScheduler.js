@@ -32,7 +32,7 @@ const runSalesSync = async () => {
             return console.log("[OBSERVADOR] Nenhuma nova venda a ser processada.");
         }
         
-        console.log(skusEAnuncios);
+        console.log(`[OBSERVADOR] ${skusEAnuncios.length} nova(s) venda(s) a processar.`);
         //AQUI VOU FAZER A ATUALIZACAO DE ESTOQUE
 
         //PRIMEIRO DESCOBRINDO SE FOI UMA VENDA UNITÁRIA OU NÃO
@@ -40,8 +40,6 @@ const runSalesSync = async () => {
 
             //baseado no ML_ID da venda, pegamos infos importantes do anúncio em que houve venda
             detalhesAnuncioQueVendeu = await anunciosService.getAnuncio(anuncio.ml_id);
-
-            console.log(detalhesAnuncioQueVendeu);
 
             //Essa função pega as infos da roda dentro do estoque da distribuidora. Baseado nas infos do anuncio que capturamos anteriormente
             if(!SKUs_DUAS_TALAS.includes(detalhesAnuncioQueVendeu[0].sku)){
@@ -53,9 +51,6 @@ const runSalesSync = async () => {
                 detalhesRodaQueVendeu = await stockService.getRodaDeVendaDuasTalas(detalhesAnuncioQueVendeu);
 
             }
-            
-
-            console.log(detalhesRodaQueVendeu);
 
             //Essa condição garante que estamos lidando com uma
             //venda que tem um SKU correspondente no estoque da distribuidora 
@@ -74,7 +69,7 @@ const runSalesSync = async () => {
                     else{
                         await stockService.subtrairRodasDeUmAnuncioDuasTalas(anuncio.sku, anuncio.quantidade * 4)
                     }
-                    console.log('é jogo de roda');
+                    console.log(`[OBSERVADOR] Venda processada: ${anuncio.sku} | jogo de roda | qtde: ${anuncio.quantidade}`);
 
                 }
                 else{
@@ -84,7 +79,7 @@ const runSalesSync = async () => {
 
                     await stockService.subtrairRodasDoEstoque(anuncio.sku, anuncio.quantidade);
 
-                    console.log('é unidade de roda');
+                    console.log(`[OBSERVADOR] Venda processada: ${anuncio.sku} | unidade | qtde: ${anuncio.quantidade}`);
 
                 }
 
