@@ -544,36 +544,45 @@ const updateEstoqueAnuncio = async (detalhesAnuncio, access_token, updatePayload
 };
 
 const processCriticalUpdates = async(mudancasCriticas,access_token) => {
-try{
-    for (rodaAlterada of mudancasCriticas) {
+    const relatorio = { atualizados: [], jaAtualizados: [], erros: [] };
+    try{
+        for (const rodaAlterada of mudancasCriticas) {
 
-        if(!(rodaAlterada.sku==='')){
+            if(!(rodaAlterada.sku==='')){
 
-            listaMLIDs = await anunciosService.getAnunciosBySku(rodaAlterada.sku);
+                try {
+                    listaMLIDs = await anunciosService.getAnunciosBySku(rodaAlterada.sku);
 
-            for(const ML_ID of listaMLIDs){
-            
-                const detalhesAnuncio = await anunciosService.getAnuncio(ML_ID.ml_id);
-            
-                const detalhesEstoque = await stockService.getRoda(detalhesAnuncio);
+                    for(const ML_ID of listaMLIDs){
 
-                console.log(detalhesEstoque)
-            
-                const updatePayload = anunciosService.generateUpdatePayload(detalhesAnuncio, detalhesEstoque)
+                        const detalhesAnuncio = await anunciosService.getAnuncio(ML_ID.ml_id);
 
-                await delay(DELAY_MS);
-                
-                await updateEstoqueAnuncio(detalhesAnuncio, access_token, updatePayload)
-            
+                        const detalhesEstoque = await stockService.getRoda(detalhesAnuncio);
+
+                        console.log(detalhesEstoque)
+
+                        const updatePayload = anunciosService.generateUpdatePayload(detalhesAnuncio, detalhesEstoque)
+
+                        await delay(DELAY_MS);
+
+                        const resultado = await updateEstoqueAnuncio(detalhesAnuncio, access_token, updatePayload)
+
+                        if (resultado && (resultado.status === 400 || resultado.status === 409)) {
+                            relatorio.jaAtualizados.push({ sku: rodaAlterada.sku, ml_id: ML_ID.ml_id });
+                        } else {
+                            relatorio.atualizados.push({ sku: rodaAlterada.sku, ml_id: ML_ID.ml_id });
+                        }
+                    }
+                } catch (skuError) {
+                    relatorio.erros.push({ sku: rodaAlterada.sku, mensagem: skuError.message });
+                }
             }
-
         }
-    }
     }
     catch(error){
         console.error("[PROCESSAR VENDAS/REPOSICOES] Erro fatal durante o processamento de vendas/reposicoes:", error.message);
-
     }
+    return relatorio;
 }
 
 

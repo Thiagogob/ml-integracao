@@ -734,7 +734,7 @@ const saveStock = async (estoque, access_token, processCriticalUpdates) => {
 
         for (const registro of truncados) {
             const exato = await Estoque.findOne({
-                attributes: ['acabamento'],
+                attributes: ['acabamento', 'sku'],
                 where: {
                     modelo: registro.modelo,
                     aro: registro.aro,
@@ -746,20 +746,38 @@ const saveStock = async (estoque, access_token, processCriticalUpdates) => {
                 raw: true
             });
 
-            if (!exato) {
-                const porPrefixo = await Estoque.findOne({
-                    attributes: ['acabamento'],
-                    where: {
-                        modelo: registro.modelo,
-                        aro: registro.aro,
-                        pcd: registro.pcd,
-                        offset: registro.offset,
-                        acabamento: { [Op.like]: `${registro.acabamento}%` }
-                    },
-                    order: [[sequelize.literal('LENGTH(acabamento)'), 'DESC']],
-                    transaction,
-                    raw: true
-                });
+            // Só pula o LIKE se o match exato tiver SKU definido — significa que
+            // alguém digitou o SKU nessa linha truncada intencionalmente e ela deve ser usada.
+            // Se o match exato não tem SKU (linha truncada de upload ruim), tentamos o LIKE
+            // para encontrar a linha completa que pode ter o SKU correto.
+            const exatoTemSku = exato && exato.sku && exato.sku !== '';
+            if (!exatoTemSku) {
+                // Tenta o prefixo original primeiro (ex: 'lbf(lip black' → 'lbf(lip black%').
+                // Se não encontrar, tenta com espaço antes de '(' (ex: 'bd(preto' → 'bd (preto%'),
+                // cobrindo casos onde o DB armazena com espaço mas o PDF omitiu.
+                const prefixOriginal = registro.acabamento;
+                const prefixComEspaco = registro.acabamento.replace(/(\S)\(/, '$1 (');
+                const prefixes = prefixOriginal === prefixComEspaco
+                    ? [prefixOriginal]
+                    : [prefixOriginal, prefixComEspaco];
+
+                let porPrefixo = null;
+                for (const prefix of prefixes) {
+                    porPrefixo = await Estoque.findOne({
+                        attributes: ['acabamento'],
+                        where: {
+                            modelo: registro.modelo,
+                            aro: registro.aro,
+                            pcd: registro.pcd,
+                            offset: registro.offset,
+                            acabamento: { [Op.like]: `${prefix}%` }
+                        },
+                        order: [[sequelize.literal('LENGTH(acabamento)'), 'DESC']],
+                        transaction,
+                        raw: true
+                    });
+                    if (porPrefixo) break;
+                }
 
                 if (porPrefixo) {
                     const acabamentoCompleto = normalizeString(porPrefixo.acabamento);
@@ -814,19 +832,125 @@ const saveStock = async (estoque, access_token, processCriticalUpdates) => {
             estoqueDbMap.set(dbKey, r.sku);
         });
 
-        // 4. PREPARAÇÃO DA LISTA DE ATUALIZAÇÃO EM MASSA (Nova Lógica)
-        const listaParaSincronizarML = [];
-        
-        registrosLimpos.forEach(registro => {
-            const skuExistente = estoqueDbMap.get(registro.unique_key);
-
-            // Se o modelo processado possui um SKU no banco, adicionamos à lista de atualização
-            if (skuExistente && skuExistente !== "") {
-                listaParaSincronizarML.push({
-                    sku: skuExistente
-                });
+        // 3B. DIAGNÓSTICO DE SKUs
+        const comSku = [];
+        const semSkuVazio = [];  // chave existe no banco mas sku='' → esperado
+        const naoEncontrado = []; // chave não existe no banco → roda nova
+        registrosLimpos.forEach(r => {
+            const sku = estoqueDbMap.get(r.unique_key);
+            if (sku && sku !== "") {
+                comSku.push({ key: r.unique_key, sku });
+            } else if (sku === '') {
+                semSkuVazio.push(r.unique_key);
+            } else {
+                naoEncontrado.push(r.unique_key);
             }
         });
+
+        // SEGUNDO PASSE: para entradas do PDF sem correspondência exata no banco,
+        // tenta match por prefixo de acabamento. Captura truncamentos que a seção 2B
+        // não detectou (ex.: acabamento cortado antes do '(', sem parêntese aberto).
+        const keysParaRetry = [...naoEncontrado];
+        for (const key of keysParaRetry) {
+            const registro = registrosLimpos.find(r => r.unique_key === key);
+            if (!registro) continue;
+
+            // Tenta o prefixo original primeiro; se não encontrar, tenta com espaço antes de '('.
+            const prefixOriginalFallback = registro.acabamento;
+            const prefixComEspacoFallback = registro.acabamento.replace(/(\S)\(/, '$1 (');
+            const prefixesFallback = prefixOriginalFallback === prefixComEspacoFallback
+                ? [prefixOriginalFallback]
+                : [prefixOriginalFallback, prefixComEspacoFallback];
+
+            let matchPorPrefixo = null;
+            for (const prefix of prefixesFallback) {
+                matchPorPrefixo = await Estoque.findOne({
+                    attributes: ['acabamento', 'sku'],
+                    where: {
+                        modelo: registro.modelo,
+                        aro: registro.aro,
+                        pcd: registro.pcd,
+                        offset: registro.offset,
+                        acabamento: { [Op.like]: `${prefix}%` },
+                        [Op.and]: sequelize.literal(`LENGTH(acabamento) > ${registro.acabamento.length}`)
+                    },
+                    order: [[sequelize.literal('LENGTH(acabamento)'), 'DESC']],
+                    transaction,
+                    raw: true
+                });
+                if (matchPorPrefixo) break;
+            }
+
+            if (matchPorPrefixo) {
+                const acabamentoCompleto = normalizeString(matchPorPrefixo.acabamento);
+                registro.acabamento = acabamentoCompleto;
+                registro.unique_key = `${registro.modelo}|${registro.aro}|${registro.pcd}|${registro.offset}|${acabamentoCompleto}`;
+                estoqueDbMap.set(registro.unique_key, matchPorPrefixo.sku);
+
+                naoEncontrado.splice(naoEncontrado.indexOf(key), 1);
+                const sku = matchPorPrefixo.sku;
+                if (sku && sku !== '') {
+                    comSku.push({ key: registro.unique_key, sku });
+                } else {
+                    semSkuVazio.push(registro.unique_key);
+                }
+                console.log(`[ACABAMENTO CORRIGIDO] ${registro.modelo}: "${key.split('|')[4]}" → "${acabamentoCompleto}"`);
+            } else {
+                // Sem match por prefixo: vai ser inserido como nova linha.
+                // Antes de inserir com sku='', verifica se existe uma linha com mesmo
+                // modelo/aro/pcd/offset (qualquer acabamento) que tenha SKU definido.
+                // Se sim, herda o SKU para não perder a associação manual.
+                const rodaComSkuOrfao = await Estoque.findOne({
+                    attributes: ['acabamento', 'sku'],
+                    where: {
+                        modelo: registro.modelo,
+                        aro: registro.aro,
+                        pcd: registro.pcd,
+                        offset: registro.offset,
+                        sku: { [Op.and]: [{ [Op.ne]: '' }, { [Op.not]: null }] }
+                    },
+                    transaction,
+                    raw: true
+                });
+
+                if (rodaComSkuOrfao) {
+                    registro.sku = rodaComSkuOrfao.sku;
+                    console.warn(`[SKU HERDADO] ${registro.modelo} "${registro.acabamento}" herdou SKU "${rodaComSkuOrfao.sku}" da linha órfã com acabamento "${rodaComSkuOrfao.acabamento}"`);
+                }
+            }
+        }
+
+        // Rodas com SKU no banco que o PDF não cobriu (chave ausente ou divergente)
+        const todasComSkuNoBanco = await Estoque.findAll({
+            attributes: ['modelo', 'aro', 'pcd', 'offset', 'acabamento', 'sku'],
+            where: { sku: { [Op.and]: [{ [Op.ne]: '' }, { [Op.not]: null }] } },
+            transaction,
+            raw: true
+        });
+
+        const chavesDoPDF = new Set(registrosLimpos.map(r => r.unique_key));
+        const naoAtualizadas = todasComSkuNoBanco.filter(r => {
+            const key = `${normalizeString(r.modelo)}|${normalizeString(r.aro)}|${normalizeString(r.pcd)}|${normalizeString(r.offset)}|${normalizeString(r.acabamento)}`;
+            return !chavesDoPDF.has(key);
+        });
+
+        console.log(`\n--- DIAGNÓSTICO DE SKUs ---`);
+        console.log(`Rodas do PDF: ${registrosLimpos.length}`);
+        console.log(`  Atualizadas (com SKU): ${comSku.length}`);
+        console.log(`  Sem SKU no banco (sku=''): ${semSkuVazio.length} → esperado`);
+        console.log(`  Não encontradas no banco (novas): ${naoEncontrado.length}`);
+        console.log(`Total de rodas com SKU no banco: ${todasComSkuNoBanco.length}`);
+        console.log(`Rodas com SKU que NÃO foram atualizadas: ${naoAtualizadas.length}`);
+        if (naoAtualizadas.length > 0) {
+            console.warn(`[ATENÇÃO] As seguintes rodas têm SKU no banco mas não foram cobertas pelo PDF:`);
+            naoAtualizadas.forEach(r => {
+                const key = `${normalizeString(r.modelo)}|${normalizeString(r.aro)}|${normalizeString(r.pcd)}|${normalizeString(r.offset)}|${normalizeString(r.acabamento)}`;
+                console.warn(`  → ${key}  [SKU: ${r.sku}]`);
+            });
+        }
+
+        // 4. PREPARAÇÃO DA LISTA DE ATUALIZAÇÃO EM MASSA (Nova Lógica)
+        const listaParaSincronizarML = comSku.map(({ sku }) => ({ sku }));
 
         // 5. ATUALIZAÇÃO DO BANCO DE DADOS
         // Importante: Não incluímos 'sku' no updateOnDuplicate para preservar os SKUs já cadastrados
@@ -838,10 +962,11 @@ const saveStock = async (estoque, access_token, processCriticalUpdates) => {
         await transaction.commit();
 
         // 6. DISPARO DA ATUALIZAÇÃO EM MASSA PARA O MERCADO LIVRE
+        let relatorioML = { atualizados: [], jaAtualizados: [], erros: [] };
         if (listaParaSincronizarML.length > 0) {
             try {
                 console.log(`[ML] Iniciando sincronização em massa de ${listaParaSincronizarML.length} SKUs...`);
-                await processCriticalUpdates(listaParaSincronizarML, access_token);
+                relatorioML = await processCriticalUpdates(listaParaSincronizarML, access_token);
             } catch (apiError) {
                 console.error('[ERRO DE API] Falha na atualização em massa do ML:', apiError.message);
             }
@@ -850,6 +975,31 @@ const saveStock = async (estoque, access_token, processCriticalUpdates) => {
         console.log(`\n--- SINCRONIZAÇÃO CONCLUÍDA ---`);
         console.log(`Modelos processados: ${registrosLimpos.length}`);
         console.log(`Anúncios enviados para atualização: ${listaParaSincronizarML.length}`);
+
+        return {
+            timestamp: new Date().toISOString(),
+            resumo: {
+                totalRodasNoPDF: registrosLimpos.length,
+                atualizadasComSKU: comSku.length,
+                semSKUNoBanco: semSkuVazio.length,
+                novasNaoEncontradas: naoEncontrado.length,
+                comSKUNaoCobertasPeloPDF: naoAtualizadas.length,
+            },
+            semSKU: semSkuVazio,
+            naoEncontradas: naoEncontrado,
+            comSKUNaoCobertasPeloPDF: naoAtualizadas.map(r => {
+                const dbModelo = normalizeString(r.modelo);
+                const candidatos = registrosLimpos
+                    .filter(p => p.modelo === dbModelo)
+                    .map(p => p.unique_key);
+                return {
+                    chave: `${dbModelo}|${normalizeString(r.aro)}|${normalizeString(r.pcd)}|${normalizeString(r.offset)}|${normalizeString(r.acabamento)}`,
+                    sku: r.sku,
+                    candidatosNoPDF: candidatos
+                };
+            }),
+            resultadosML: relatorioML
+        };
 
     } catch (error) {
         if (transaction) await transaction.rollback(); 

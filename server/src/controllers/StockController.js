@@ -1,8 +1,12 @@
 const fs = require('fs');
+const path = require('path');
 const pdfService = require('../services/pdf.service');
 const stockService = require('../services/stock.service');
 const meliService = require('../services/meli.service');
 const xlsx = require('xlsx');
+
+const LOGS_DIR = path.join(__dirname, '../../logs');
+if (!fs.existsSync(LOGS_DIR)) fs.mkdirSync(LOGS_DIR, { recursive: true });
 
 
 exports.uploadStockController = async (req, res) => {
@@ -35,9 +39,17 @@ exports.uploadStockController = async (req, res) => {
         const rodas = stockService.parseTxtToWheels(cleanText);
 
         // 3. Salva os dados no banco de dados (também é uma tarefa do serviço)
-        await stockService.saveStock(rodas, access_token, meliService.processCriticalUpdates);
+        const diagnostico = await stockService.saveStock(rodas, access_token, meliService.processCriticalUpdates);
 
-        // 4. Envia a resposta final para o cliente
+        // 4. Persiste o relatório em disco para inspeção
+        if (diagnostico) {
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const logPath = path.join(LOGS_DIR, `sync-${timestamp}.json`);
+            fs.writeFileSync(logPath, JSON.stringify(diagnostico, null, 2), 'utf8');
+            console.log(`[LOG] Relatório salvo em: ${logPath}`);
+        }
+
+        // 5. Envia a resposta final para o cliente
         return res.json({ message: "Estoque processado e salvo com sucesso!"});
 
     } catch (err) {
