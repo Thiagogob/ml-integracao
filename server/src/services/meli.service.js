@@ -544,6 +544,11 @@ const updateEstoqueAnuncio = async (detalhesAnuncio, access_token, updatePayload
     return respostaJson;
 };
 
+const getStoredToken = async (storeId) => {
+    const record = await Token.findOne({ where: { store_id: storeId } });
+    return record ? record.access_token : null;
+};
+
 const processCriticalUpdates = async(mudancasCriticas,access_token) => {
     const relatorio = { atualizados: [], jaAtualizados: [], erros: [] };
     try{
@@ -594,5 +599,6 @@ module.exports = {
   getDetalhesAnuncios,
   updateEstoqueAnuncio,
   processCriticalUpdates,
+  getStoredToken,
   delay
 };

@@ -118,6 +118,37 @@ const getAnunciosBySku = async (sku) => {
 }
 
 
+const getAnunciosBySkuForStore = async (sku, storeId) => {
+    try {
+        const arrayAnuncios = await Anuncio.findAll({
+            where: { sku, store_id: storeId },
+            raw: true
+        });
+        return arrayAnuncios.map(a => ({ ml_id: a.ml_id }));
+    } catch (error) {
+        console.error("Erro ao capturar anúncio", error);
+        throw error;
+    }
+};
+
+const getAnuncioForStore = async (id_anuncio, storeId) => {
+    try {
+        const arrayAnuncio = await Anuncio.findAll({
+            where: { ml_id: id_anuncio, store_id: storeId },
+            raw: true
+        });
+        return arrayAnuncio.map(a => ({
+            ml_id: a.ml_id,
+            variation_id: a.sku_id,
+            sku: a.sku,
+            isUnitario: a.isUnitario
+        }));
+    } catch (error) {
+        console.error("Erro ao capturar anúncio", error);
+        throw error;
+    }
+};
+
 const generateUpdatePayload = (detalhesAnuncio, detalhesEstoque) => {
 
 
@@ -175,5 +206,7 @@ module.exports = {
     salvarAnuncios,
     getAnuncio,
     generateUpdatePayload,
-    getAnunciosBySku
+    getAnunciosBySku,
+    getAnunciosBySkuForStore,
+    getAnuncioForStore
 };
