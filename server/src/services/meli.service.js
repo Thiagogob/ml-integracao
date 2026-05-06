@@ -4,6 +4,10 @@ require('dotenv').config();
 const anunciosService = require('../services/anuncios.service');
 const stockService = require('../services/stock.service');
 
+const DEBUG_SKU = 'M17ARO174-1004-108HD';
+let _debugTrace = [];
+const dbg = (msg) => { _debugTrace.push(msg); console.log(`[DEBUG ${DEBUG_SKU}] ${msg}`); };
+
 const SELLER_ID = process.env.SELLER_ID;
 const SECRET_KEY = process.env.SECRET_KEY;
 const ACCESS_TOKEN = process.env.ACCESS_TOKEN;
@@ -550,6 +554,7 @@ const getStoredToken = async (storeId) => {
 };
 
 const processCriticalUpdates = async(mudancasCriticas,access_token) => {
+    _debugTrace = [];
     const relatorio = { atualizados: [], jaAtualizados: [], erros: [] };
     try{
         for (const rodaAlterada of mudancasCriticas) {
@@ -567,9 +572,17 @@ const processCriticalUpdates = async(mudancasCriticas,access_token) => {
 
                         const updatePayload = anunciosService.generateUpdatePayload(detalhesAnuncio, detalhesEstoque)
 
+                        if (rodaAlterada.sku === DEBUG_SKU) {
+                            dbg(`[6-PAYLOAD] ml_id=${ML_ID.ml_id} payload=${JSON.stringify(updatePayload)}`);
+                        }
+
                         await delay(DELAY_MS);
 
                         const resultado = await updateEstoqueAnuncio(detalhesAnuncio, access_token, updatePayload)
+
+                        if (rodaAlterada.sku === DEBUG_SKU) {
+                            dbg(`[6-RESULT] ml_id=${ML_ID.ml_id} status=${resultado?.status ?? 'ok'}`);
+                        }
 
                         if (resultado && (resultado.status === 400 || resultado.status === 409)) {
                             relatorio.jaAtualizados.push({ sku: rodaAlterada.sku, ml_id: ML_ID.ml_id });
@@ -586,6 +599,7 @@ const processCriticalUpdates = async(mudancasCriticas,access_token) => {
     catch(error){
         console.error("[PROCESSAR VENDAS/REPOSICOES] Erro fatal durante o processamento de vendas/reposicoes:", error.message);
     }
+    relatorio.debugTrace = _debugTrace;
     return relatorio;
 }
 

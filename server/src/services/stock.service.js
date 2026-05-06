@@ -2,6 +2,13 @@
 const { Estoque, EstoqueTemporario, sequelize } = require('../config/database');
 const { Op } = require('sequelize');
 
+// Change this SKU to trace any model through the full update flow
+const DEBUG_SKU = 'M17ARO174-1004-108HD';
+let _debugTrace = [];
+const dbg = (msg) => { _debugTrace.push(msg); console.log(`[DEBUG ${DEBUG_SKU}] ${msg}`); };
+const getDebugTrace = () => _debugTrace;
+const clearDebugTrace = () => { _debugTrace = []; };
+
 
 
 
@@ -680,6 +687,7 @@ const saveStock = async (estoque, access_token, processCriticalUpdates) => {
     const transaction = await sequelize.transaction();
     
     try {
+        clearDebugTrace();
         console.log("Iniciando a sincronização inteligente de estoque...");
 
         // 1. PREPARAÇÃO E NORMALIZAÇÃO DOS DADOS
@@ -725,6 +733,14 @@ const saveStock = async (estoque, access_token, processCriticalUpdates) => {
         });
         
         const registrosLimpos = Array.from(mapaDeduplicado.values());
+
+        // DEBUG: trace target model through PDF parsing
+        const debugNoPDF = registrosLimpos.filter(r => r.unique_key.startsWith('m17|17|4x100'));
+        if (debugNoPDF.length > 0) {
+            debugNoPDF.forEach(r => dbg(`[1-PDF] key="${r.unique_key}" qtde_sp=${r.qtde_sp} qtde_sc=${r.qtde_sc} qtde_pr=${r.qtde_pr}`));
+        } else {
+            dbg('[1-PDF] modelo NÃO encontrado no PDF após parsing e deduplicação');
+        }
 
         // 2B. CORREÇÃO DE ACABAMENTOS TRUNCADOS
         // O novo PDF tem colunas mais estreitas: "BD (PRETO DIAMANTADO)" vira "BD (PRETO".
@@ -847,6 +863,15 @@ const saveStock = async (estoque, access_token, processCriticalUpdates) => {
             }
         });
 
+        // DEBUG: trace target SKU after first-pass matching
+        const debugComSku = comSku.find(e => e.sku === DEBUG_SKU);
+        const debugSemSku = semSkuVazio.find(k => k.includes('m17|17|4x100'));
+        const debugNaoEncontrado = naoEncontrado.find(k => k.includes('m17|17|4x100'));
+        if (debugComSku)       dbg(`[3-MATCH 1ºpasse] SKU encontrado → key="${debugComSku.key}"`);
+        else if (debugSemSku)  dbg(`[3-MATCH 1ºpasse] chave existe no banco mas sku='' → key="${debugSemSku}"`);
+        else if (debugNaoEncontrado) dbg(`[3-MATCH 1ºpasse] chave NÃO encontrada no banco → key="${debugNaoEncontrado}"`);
+        else                   dbg('[3-MATCH 1ºpasse] modelo não apareceu em nenhuma lista (não estava no PDF)');
+
         // SEGUNDO PASSE: para entradas do PDF sem correspondência exata no banco,
         // tenta match por prefixo de acabamento. Captura truncamentos que a seção 2B
         // não detectou (ex.: acabamento cortado antes do '(', sem parêntese aberto).
@@ -920,6 +945,17 @@ const saveStock = async (estoque, access_token, processCriticalUpdates) => {
             }
         }
 
+        // DEBUG: trace target SKU after second-pass matching
+        const debugComSku2 = comSku.find(e => e.sku === DEBUG_SKU);
+        if (debugComSku2) {
+            const reg = registrosLimpos.find(r => r.unique_key === debugComSku2.key);
+            dbg(`[3-MATCH 2ºpasse] SKU confirmado → key="${debugComSku2.key}" qtde_sp=${reg?.qtde_sp} qtde_sc=${reg?.qtde_sc} qtde_pr=${reg?.qtde_pr}`);
+        } else {
+            const stillMissing = naoEncontrado.find(k => k.includes('m17|17|4x100'));
+            if (stillMissing) dbg(`[3-MATCH 2ºpasse] ainda sem match após 2º passe → key="${stillMissing}"`);
+            else dbg('[3-MATCH 2ºpasse] SKU não chegou ao 2º passe (não estava no PDF ou sem chave correspondente)');
+        }
+
         // Rodas com SKU no banco que o PDF não cobriu (chave ausente ou divergente)
         const todasComSkuNoBanco = await Estoque.findAll({
             attributes: ['modelo', 'aro', 'pcd', 'offset', 'acabamento', 'sku'],
@@ -933,6 +969,17 @@ const saveStock = async (estoque, access_token, processCriticalUpdates) => {
             const key = `${normalizeString(r.modelo)}|${normalizeString(r.aro)}|${normalizeString(r.pcd)}|${normalizeString(r.offset)}|${normalizeString(r.acabamento)}`;
             return !chavesDoPDF.has(key);
         });
+
+        // DEBUG: did target SKU end up in naoAtualizadas (skipped by ML update)?
+        const debugNaoAtualizada = naoAtualizadas.find(r => r.sku === DEBUG_SKU);
+        if (debugNaoAtualizada) {
+            const key = `${normalizeString(debugNaoAtualizada.modelo)}|${normalizeString(debugNaoAtualizada.aro)}|${normalizeString(debugNaoAtualizada.pcd)}|${normalizeString(debugNaoAtualizada.offset)}|${normalizeString(debugNaoAtualizada.acabamento)}`;
+            dbg(`[4-COBERTURA] *** SKU ficou em comSKUNaoCobertasPeloPDF → anúncio NÃO será atualizado *** key_banco="${key}"`);
+        } else if (comSku.find(e => e.sku === DEBUG_SKU)) {
+            dbg(`[4-COBERTURA] SKU está em comSku → será incluído na sincronização ML`);
+        } else {
+            dbg('[4-COBERTURA] SKU não apareceu em nenhum grupo final');
+        }
 
         console.log(`\n--- DIAGNÓSTICO DE SKUs ---`);
         console.log(`Rodas do PDF: ${registrosLimpos.length}`);
@@ -998,11 +1045,12 @@ const saveStock = async (estoque, access_token, processCriticalUpdates) => {
                     candidatosNoPDF: candidatos
                 };
             }),
-            resultadosML: relatorioML
+            resultadosML: relatorioML,
+            debugTrace: { sku: DEBUG_SKU, eventos: getDebugTrace() }
         };
 
     } catch (error) {
-        if (transaction) await transaction.rollback(); 
+        if (transaction) await transaction.rollback();
         console.error('Erro fatal ao sincronizar o estoque:', error);
         throw error;
     }
@@ -1225,7 +1273,7 @@ const getRoda = async (detalhesAnuncio) => {
             })
 
             if(roda){
-                
+
                 // --- CÁLCULO DE QUANTIDADE TOTAL CONDICIONAL ---
                 if (useFullStock) {
                     // Soma SP + SC + PR
@@ -1236,7 +1284,9 @@ const getRoda = async (detalhesAnuncio) => {
                 }
                 // --- FIM DO CÁLCULO ---
 
-                
+                if (skuRoda === DEBUG_SKU) {
+                    dbg(`[5-GETROD] qtde_sp=${roda.qtde_sp} qtde_sc=${roda.qtde_sc} qtde_pr=${roda.qtde_pr} qtde_local=${roda.qtde_local} → quantidadeTotal=${quantidadeTotal} (useFullStock=${useFullStock})`);
+                }
             } else {
                 quantidadeTotal = null
                 console.warn(`[ESTOQUE] Não há sku correspondente no estoque da distribuidora para o SKU: ${skuRoda}`);
