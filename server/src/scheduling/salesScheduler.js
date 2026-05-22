@@ -1,4 +1,5 @@
 const cron = require('node-cron');
+const logger = require('../config/logger');
 const meliService = require('../services/meli.service');
 const vendasService = require('../services/vendas.service');
 const anunciosService = require('../services/anuncios.service');
@@ -19,7 +20,7 @@ const pushSkuToStore2 = async (sku, tokenStr) => {
 };
 
 const runSalesSync = async () => {
-    console.log(`\n--- [OBSERVADOR] Iniciando verificação de vendas (${new Date().toLocaleTimeString()}) ---`);
+    logger.info('observador: iniciando verificacao de vendas');
     let access_token;
     const SKUs_DUAS_TALAS = [
         'M08ARO14675-114BD',
@@ -31,7 +32,7 @@ const runSalesSync = async () => {
 
         const resposta = await meliService.authTest();
             if(!resposta){
-                    console.log("Token Inválido. Gerando um novo...")
+                    logger.info('token invalido, gerando novo token');
                     access_token = await meliService.getAuth();
             }
             else{
@@ -49,7 +50,7 @@ const runSalesSync = async () => {
                 try {
                     await pushSkuToStore2(sku, store2TokenThisTick);
                     delete store2RetryQueue[sku];
-                    console.log(`[CROSS-STORE] Retry OK for SKU ${sku}.`);
+                    logger.info({ sku }, 'cross-store retry OK');
                 } catch (error) {
                     if (/Status 401/.test(error.message)) {
                         store2TokenThisTick = null;
@@ -57,13 +58,13 @@ const runSalesSync = async () => {
                         store2RetryQueue[sku]--;
                         if (store2RetryQueue[sku] <= 0) {
                             delete store2RetryQueue[sku];
-                            console.warn(`[CROSS-STORE] SKU ${sku} exhausted retries. Giving up.`);
+                            logger.warn({ sku }, 'cross-store: SKU esgotou tentativas, desistindo');
                         } else {
-                            console.warn(`[CROSS-STORE] 401 on retry for SKU ${sku} (${store2RetryQueue[sku]} left). Stopping cross-store this tick.`);
+                            logger.warn({ sku, attemptsLeft: store2RetryQueue[sku] }, 'cross-store: 401 no retry, parando neste tick');
                         }
                     } else {
                         delete store2RetryQueue[sku];
-                        console.warn(`[CROSS-STORE] Non-auth error on retry for SKU ${sku}. Discarding.`);
+                        logger.warn({ sku }, 'cross-store: erro nao-auth no retry, descartando');
                     }
                 }
             }
@@ -73,10 +74,13 @@ const runSalesSync = async () => {
 
 
         if (skusEAnuncios.length === 0) {
-            return console.log("[OBSERVADOR] Nenhuma nova venda a ser processada.");
+            logger.info('observador: nenhuma nova venda a processar');
+            return;
         }
 
-        console.log(`[OBSERVADOR] ${skusEAnuncios.length} nova(s) venda(s) a processar.`);
+        logger.info({ count: skusEAnuncios.length }, 'observador: novas vendas a processar');
+
+        const falhasML = [];
 
         for(const anuncio of skusEAnuncios){
 
@@ -111,7 +115,7 @@ const runSalesSync = async () => {
                     else{
                         await stockService.subtrairRodasDeUmAnuncioDuasTalas(anuncio.sku, anuncio.quantidade * 4)
                     }
-                    console.log(`[OBSERVADOR] Venda processada: ${anuncio.sku} | jogo de roda | qtde: ${anuncio.quantidade}`);
+                    logger.info({ sku: anuncio.sku, tipo: 'jogo', quantidade: anuncio.quantidade }, 'venda processada');
 
                 }
                 else{
@@ -121,7 +125,7 @@ const runSalesSync = async () => {
 
                     await stockService.subtrairRodasDoEstoque(anuncio.sku, anuncio.quantidade);
 
-                    console.log(`[OBSERVADOR] Venda processada: ${anuncio.sku} | unidade | qtde: ${anuncio.quantidade}`);
+                    logger.info({ sku: anuncio.sku, tipo: 'unidade', quantidade: anuncio.quantidade }, 'venda processada');
 
                 }
 
@@ -141,7 +145,11 @@ const runSalesSync = async () => {
 
                         const updatePayload = anunciosService.generateUpdatePayload(detalhesAnuncio, detalhesEstoque)
 
-                        await meliService.updateEstoqueAnuncio(detalhesAnuncio, access_token, updatePayload, 1)
+                        try {
+                            await meliService.updateEstoqueAnuncio(detalhesAnuncio, access_token, updatePayload, 1)
+                        } catch (mlError) {
+                            falhasML.push({ sku: anuncio.sku, ml_id: ML_ID.ml_id, erro: mlError.message });
+                        }
 
                     }
 
@@ -149,7 +157,7 @@ const runSalesSync = async () => {
                     if (store2TokenThisTick && !store2AuthFailedThisTick) {
                         try {
                             await pushSkuToStore2(anuncio.sku, store2TokenThisTick);
-                            console.log(`[CROSS-STORE] Store 2 updated for SKU ${anuncio.sku}.`);
+                            logger.info({ sku: anuncio.sku }, 'cross-store: loja 2 atualizada');
                         } catch (error) {
                             if (/Status 401/.test(error.message)) {
                                 store2TokenThisTick = null;
@@ -157,28 +165,32 @@ const runSalesSync = async () => {
                                 if (!(anuncio.sku in store2RetryQueue)) {
                                     store2RetryQueue[anuncio.sku] = CROSS_STORE_MAX_RETRIES;
                                 }
-                                console.warn(`[CROSS-STORE] 401 for SKU ${anuncio.sku}. Enqueued for retry (${CROSS_STORE_MAX_RETRIES} attempts left).`);
+                                logger.warn({ sku: anuncio.sku, maxRetries: CROSS_STORE_MAX_RETRIES }, 'cross-store: 401, enfileirado para retry');
                             }
                             // non-auth errors are transient noise; discard immediately
                         }
                     } else if (store2AuthFailedThisTick && !(anuncio.sku in store2RetryQueue)) {
                         store2RetryQueue[anuncio.sku] = CROSS_STORE_MAX_RETRIES;
-                        console.log(`[CROSS-STORE] Auth failed this tick; enqueued SKU ${anuncio.sku} for retry.`);
+                        logger.warn({ sku: anuncio.sku }, 'cross-store: auth falhou neste tick, enfileirado para retry');
                     }
 
             }else{
 
-                console.log(`${anuncio.sku} nao é roda`);
+                logger.info({ sku: anuncio.sku }, 'SKU nao e roda, ignorando');
 
 
             }
             //console.log(detalhesAnuncioQueVendeu);
         }
 
-        console.log("--- [OBSERVADOR] Sincronização de vendas concluída com sucesso. ---");
+        if (falhasML.length > 0) {
+            logger.error({ falhas: falhasML }, `ATENCAO: ${falhasML.length} anuncio(s) nao atualizados no ML apos vendas - estoque pode estar desatualizado`);
+        }
+
+        logger.info('observador: sincronizacao de vendas concluida');
 
     } catch (error) {
-        console.error("[OBSERVADOR] Erro fatal durante a sincronização de vendas/estoque:", error.message);
+        logger.error({ err: error }, 'observador: erro fatal na sincronizacao de vendas/estoque');
     }
 };
 
@@ -188,7 +200,7 @@ const startSalesScheduler = () => {
     cron.schedule( '*/10 * * * *', () => {
         runSalesSync();
     });
-    console.log("Serviço de agendamento de vendas iniciado (a cada 10 minutos).");
+    logger.info('servico de agendamento de vendas iniciado (a cada 10 minutos)');
 };
 
 // Você exportará isso e chamará no seu server.js

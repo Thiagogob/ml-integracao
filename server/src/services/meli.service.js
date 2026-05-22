@@ -1,4 +1,5 @@
 const { Token, Venda } = require('../config/database');
+const logger = require('../config/logger');
 const { QueryTypes } = require('sequelize');
 require('dotenv').config();
 const anunciosService = require('../services/anuncios.service');
@@ -6,7 +7,7 @@ const stockService = require('../services/stock.service');
 
 const DEBUG_SKU = 'M17ARO174-1004-108HD';
 let _debugTrace = [];
-const dbg = (msg) => { _debugTrace.push(msg); console.log(`[DEBUG ${DEBUG_SKU}] ${msg}`); };
+const dbg = (msg) => { _debugTrace.push(msg); logger.debug({ sku: DEBUG_SKU }, msg); };
 
 const SELLER_ID = process.env.SELLER_ID;
 const SECRET_KEY = process.env.SECRET_KEY;
@@ -75,13 +76,13 @@ const getAuth = async () => {
             }
         );
 
-        console.log('Tokens atualizados com sucesso.');
+        logger.info('tokens ML atualizados com sucesso');
 
         // 4. Retorna o novo access_token
         return resposta_json.access_token;
 
     } catch (err) {
-        console.error('Erro ao obter/atualizar tokens:', err.message);
+        logger.error({ err }, 'erro ao obter/atualizar tokens ML');
         throw err; // Lança o erro para que o controller o capture
     }
 };
@@ -95,7 +96,7 @@ const authTest = async () => {
         
         // Se o resultado for nulo (tabela vazia), o Sequelize retorna null.
         if (!resultado || !resultado.access_token) {
-            console.error("Tokens não encontrados no banco de dados.");
+            logger.error('tokens nao encontrados no banco de dados');
             return false;
         }
 
@@ -111,17 +112,17 @@ const authTest = async () => {
         });
 
         if (resposta.status === 200) {
-            console.log("Token ainda válido.");
+            logger.info('token ML ainda valido');
             return access_token;
         } else if (resposta.status === 401) {
-            console.log("Token inválido.");
+            logger.info('token ML invalido');
             return false;
         } else {
             // Lança um erro para status inesperados
             throw new Error(`Erro inesperado ao testar o token: ${resposta.status}`);
         }
     } catch (err) {
-        console.error('Erro ao testar a autenticação:', err.message);
+        logger.error({ err }, 'erro ao testar autenticacao ML');
         throw err;
     }
 };
@@ -194,7 +195,7 @@ const getVendas = async (access_token) => {
             }
 
         } catch (error) {
-            console.error('Erro ao buscar vendas:', error);
+            logger.error({ err: error }, 'erro ao buscar vendas ML');
             // Lança o erro para que o controller o capture
             throw error;
         }
@@ -243,7 +244,7 @@ const getIdsAnuncios = async (access_token) => {
         totalAnunciosApi = resposta_json.paging.total || 0;
         scroll_id = resposta_json.scroll_id;
         
-        console.log(`Total de anúncios a buscar: ${totalAnunciosApi}`);
+        logger.info({ totalAnunciosApi }, 'total de anuncios a buscar');
         
         // Adiciona a primeira página de resultados
         if (resposta_json.results && resposta_json.results.length > 0) {
@@ -292,11 +293,11 @@ const getIdsAnuncios = async (access_token) => {
         }
 
     } catch (error) {
-        console.error('Erro no processo de scan de anúncios', error);
+        logger.error({ err: error }, 'erro no scan de anuncios ML');
         throw error;
     }
     
-    console.log(`Busca finalizada. Total de IDs capturados: ${todosOsAnuncios.length}`);
+    logger.info({ total: todosOsAnuncios.length }, 'busca de IDs de anuncios finalizada');
     
     return { results: todosOsAnuncios };
 }
@@ -338,7 +339,7 @@ const getDetalhesAnuncios = async (anuncioIds, access_token) => {
             return resposta_json.map(item => item.body);
 
         } catch (error) {
-            console.error('Erro na requisição de teste:', error);
+            logger.error({ err: error }, 'erro na requisicao de teste ML');
             throw error;
         }
     }
@@ -349,7 +350,7 @@ const getDetalhesAnuncios = async (anuncioIds, access_token) => {
         lotes.push(anuncioIds.slice(i, i + BATCH_SIZE));
     }
     
-    console.log(`Iniciando a busca de detalhes em ${lotes.length} lotes.`);
+    logger.info({ lotes: lotes.length }, 'iniciando busca de detalhes de anuncios');
 
     
     // 2. Processa cada lote de forma assíncrona
@@ -377,7 +378,7 @@ const getDetalhesAnuncios = async (anuncioIds, access_token) => {
             } catch (error) {
                 if (retries < maxRetries && error.cause && error.cause.code === 'UND_ERR_CONNECT_TIMEOUT') {
                     retries++;
-                    console.warn(`Timeout! Retrying request ${retries}/${maxRetries}`);
+                    logger.warn({ retries, maxRetries }, 'timeout na requisicao ML, retentando');
                     await new Promise(resolve => setTimeout(resolve, 2000)); 
                     return executeFetchWithRetry(); 
                 } else {
@@ -400,7 +401,7 @@ const getDetalhesAnuncios = async (anuncioIds, access_token) => {
                 }
             });
 
-            console.log(`Detalhes de ${todosOsDetalhes.length} anúncios capturados.`);
+            logger.info({ total: todosOsDetalhes.length }, 'detalhes de anuncios capturados');
 
             return todosOsDetalhes.map(anuncio => {
                 let skus = []; // O SKU agora é um array
@@ -454,7 +455,7 @@ const getDetalhesAnuncios = async (anuncioIds, access_token) => {
             });
 
         } catch (error) {
-            console.error('Erro ao buscar detalhes dos anúncios:', error);
+            logger.error({ err: error }, 'erro ao buscar detalhes dos anuncios');
             throw error;
         }
     }
@@ -515,24 +516,19 @@ const updateEstoqueAnuncio = async (detalhesAnuncio, access_token, updatePayload
     if (!resposta.ok) {
 
         if (isValidationError && respostaJson.cause?.some(c => c.cause_id === 201)) {
-             console.warn(`[ML API - 400 IGNORADO] Validação de imagem (Item ${mlItemId}) falhou. Pulando anúncio.`);
+             logger.warn({ mlItemId }, 'ML API 400: validacao de imagem falhou, pulando anuncio');
              return { status: 400, message: 'Image validation bypassed.' };
         }
 
         if (statusCode === 409) {
-            console.warn(`[ML API - 409 IGNORADO] Conflito de concorrência detectado para ML ID ${detalhesAnuncio[0].ml_id}. Continuando o processo.`);
-            return { status: 409, message: 'Conflict ignored.' }; // Retorna sucesso silencioso
-        }
-
-        if (statusCode === 400) {
-            console.warn(`[ML API - 400 IGNORADO] Conflito de validação detectado para ML ID ${detalhesAnuncio[0].ml_id}. Continuando o processo.`);
+            logger.warn({ mlId: detalhesAnuncio[0].ml_id }, 'ML API 409: conflito de concorrencia ignorado');
             return { status: 409, message: 'Conflict ignored.' }; // Retorna sucesso silencioso
         }
 
         if (statusCode === 429 && attempt < MAX_RETRIES) {
                 const retryDelay = INITIAL_RETRY_DELAY_MS * attempt; // 2s, 4s, 6s, etc.
                 
-                console.warn(`[ML API - 429 RETRY] Rate Limit atingido para ML ID ${mlItemId}. Tentativa ${attempt}/${MAX_RETRIES}. Retrying in ${retryDelay / 1000}s...`);
+                logger.warn({ mlItemId, attempt, maxRetries: MAX_RETRIES, retryDelaySecs: retryDelay / 1000 }, 'ML API 429: rate limit, retentando');
                 
                 await delay(retryDelay); // Pausa a execução
                 
@@ -540,11 +536,11 @@ const updateEstoqueAnuncio = async (detalhesAnuncio, access_token, updatePayload
                 return updateEstoqueAnuncio(detalhesAnuncio, access_token, updatePayload, attempt + 1);
             }
 
-        console.error(`Erro ao atualizar estoque (${resposta.status}):`, respostaJson);
+        logger.error({ status: resposta.status, body: respostaJson }, 'erro ao atualizar estoque ML');
         throw new Error(`Falha na atualização do estoque (Status ${resposta.status}).`);
     }
 
-    console.log("[ML API] Estoque atualizado com sucesso.");
+    logger.info({ mlItemId }, 'ML API: estoque atualizado com sucesso');
     return respostaJson;
 };
 
@@ -597,7 +593,7 @@ const processCriticalUpdates = async(mudancasCriticas,access_token) => {
         }
     }
     catch(error){
-        console.error("[PROCESSAR VENDAS/REPOSICOES] Erro fatal durante o processamento de vendas/reposicoes:", error.message);
+        logger.error({ err: error }, 'erro fatal no processamento de vendas/reposicoes');
     }
     relatorio.debugTrace = _debugTrace;
     return relatorio;
