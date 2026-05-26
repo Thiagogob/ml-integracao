@@ -1,11 +1,12 @@
 // /server/src/services/stock.service.js
 const { Estoque, EstoqueTemporario, sequelize } = require('../config/database');
 const { Op } = require('sequelize');
+const logger = require('../config/logger');
 
 // Change this SKU to trace any model through the full update flow
 const DEBUG_SKU = 'M17ARO174-1004-108HD';
 let _debugTrace = [];
-const dbg = (msg) => { _debugTrace.push(msg); console.log(`[DEBUG ${DEBUG_SKU}] ${msg}`); };
+const dbg = (msg) => { _debugTrace.push(msg); logger.debug({ sku: DEBUG_SKU }, msg); };
 const getDebugTrace = () => _debugTrace;
 const clearDebugTrace = () => { _debugTrace = []; };
 
@@ -50,7 +51,7 @@ function parseTxtToWheels(text) {
                 QTDE_SC: parseInt(qtde_sc)
             });
         } else {
-            console.warn(`Linha ignorada (não corresponde ao padrão): "${line}"`);
+            logger.warn({ line }, 'linha ignorada: nao corresponde ao padrao');
         }
     }
 
@@ -93,7 +94,7 @@ function parseTxtToWheelsSul(text) {
                 sku: null 
             });
         } else {
-            console.warn(`Linha ignorada (não corresponde ao padrão): "${line}"`);
+            logger.warn({ line }, 'linha ignorada: nao corresponde ao padrao');
         }
     }
 
@@ -116,13 +117,13 @@ const saveStockSul = async (estoque) => {
     const transaction = await sequelize.transaction();
     
     try {
-        console.log("Iniciando a sincronização inteligente de estoque TEMPORÁRIO do Sul...");
-        
-        // 1. LIMPEZA DA TABELA TEMPORÁRIA 
-        
-        console.log('Limpando o Estoque Temporário antes da nova inserção...');
+        logger.info('iniciando sincronizacao de estoque temporario do Sul');
+
+        // 1. LIMPEZA DA TABELA TEMPORÁRIA
+
+        logger.info('limpando estoque temporario antes da nova insercao');
         await EstoqueTemporario.destroy({ where: {}, transaction: transaction });
-        console.log('Estoque Temporário limpo com sucesso.');
+        logger.info('estoque temporario limpo com sucesso');
 
         // 2. PREPARAÇÃO DOS DADOS: Cria a lista de objetos para o Upsert
         const registrosParaUpsert = estoque.map((roda, index) => {
@@ -178,13 +179,11 @@ const saveStockSul = async (estoque) => {
         
         await transaction.commit();
         
-        console.log(`\n--- SINCRONIZAÇÃO TEMPORÁRIA CONCLUÍDA ---`);
-        console.log(`Total de registros inseridos/atualizados no Estoque Temporário: ${registrosParaUpsert.length}`);
-        console.log(`Dados prontos para a etapa de Matching (SKU).`);
+        logger.info({ total: registrosParaUpsert.length }, 'sincronizacao temporaria Sul concluida, pronto para matching de SKU');
 
     } catch (error) {
         await transaction.rollback(); 
-        console.error('Erro fatal ao sincronizar o estoque TEMPORÁRIO:', error);
+        logger.error({ err: error }, 'erro fatal ao sincronizar estoque temporario Sul');
         throw error;
     }
 };
@@ -688,7 +687,7 @@ const saveStock = async (estoque, access_token, processCriticalUpdates) => {
     
     try {
         clearDebugTrace();
-        console.log("Iniciando a sincronização inteligente de estoque...");
+        logger.info('iniciando sincronizacao inteligente de estoque (PDF SP)');
 
         // 1. PREPARAÇÃO E NORMALIZAÇÃO DOS DADOS
         const registrosParaUpsert = estoque.map((roda) => {
@@ -735,7 +734,7 @@ const saveStock = async (estoque, access_token, processCriticalUpdates) => {
         const registrosLimpos = Array.from(mapaDeduplicado.values());
 
         // DEBUG: trace target model through PDF parsing
-        const debugNoPDF = registrosLimpos.filter(r => r.unique_key.startsWith('m17|17|4x100'));
+        const debugNoPDF = registrosLimpos.filter(r => r.unique_key.startsWith('m17|17x7|4x100'));
         if (debugNoPDF.length > 0) {
             debugNoPDF.forEach(r => dbg(`[1-PDF] key="${r.unique_key}" qtde_sp=${r.qtde_sp} qtde_sc=${r.qtde_sc} qtde_pr=${r.qtde_pr}`));
         } else {
@@ -865,8 +864,8 @@ const saveStock = async (estoque, access_token, processCriticalUpdates) => {
 
         // DEBUG: trace target SKU after first-pass matching
         const debugComSku = comSku.find(e => e.sku === DEBUG_SKU);
-        const debugSemSku = semSkuVazio.find(k => k.includes('m17|17|4x100'));
-        const debugNaoEncontrado = naoEncontrado.find(k => k.includes('m17|17|4x100'));
+        const debugSemSku = semSkuVazio.find(k => k.includes('m17|17x7|4x100'));
+        const debugNaoEncontrado = naoEncontrado.find(k => k.includes('m17|17x7|4x100'));
         if (debugComSku)       dbg(`[3-MATCH 1ºpasse] SKU encontrado → key="${debugComSku.key}"`);
         else if (debugSemSku)  dbg(`[3-MATCH 1ºpasse] chave existe no banco mas sku='' → key="${debugSemSku}"`);
         else if (debugNaoEncontrado) dbg(`[3-MATCH 1ºpasse] chave NÃO encontrada no banco → key="${debugNaoEncontrado}"`);
@@ -919,7 +918,7 @@ const saveStock = async (estoque, access_token, processCriticalUpdates) => {
                 } else {
                     semSkuVazio.push(registro.unique_key);
                 }
-                console.log(`[ACABAMENTO CORRIGIDO] ${registro.modelo}: "${key.split('|')[4]}" → "${acabamentoCompleto}"`);
+                logger.info({ modelo: registro.modelo, de: key.split('|')[4], para: acabamentoCompleto }, 'acabamento corrigido por prefixo');
             } else {
                 // Sem match por prefixo: vai ser inserido como nova linha.
                 // Antes de inserir com sku='', verifica se existe uma linha com mesmo
@@ -940,7 +939,7 @@ const saveStock = async (estoque, access_token, processCriticalUpdates) => {
 
                 if (rodaComSkuOrfao) {
                     registro.sku = rodaComSkuOrfao.sku;
-                    console.warn(`[SKU HERDADO] ${registro.modelo} "${registro.acabamento}" herdou SKU "${rodaComSkuOrfao.sku}" da linha órfã com acabamento "${rodaComSkuOrfao.acabamento}"`);
+                    logger.warn({ modelo: registro.modelo, acabamento: registro.acabamento, skuHerdado: rodaComSkuOrfao.sku, acabamentoOrigem: rodaComSkuOrfao.acabamento }, 'SKU herdado de linha orfa');
                 }
             }
         }
@@ -951,7 +950,7 @@ const saveStock = async (estoque, access_token, processCriticalUpdates) => {
             const reg = registrosLimpos.find(r => r.unique_key === debugComSku2.key);
             dbg(`[3-MATCH 2ºpasse] SKU confirmado → key="${debugComSku2.key}" qtde_sp=${reg?.qtde_sp} qtde_sc=${reg?.qtde_sc} qtde_pr=${reg?.qtde_pr}`);
         } else {
-            const stillMissing = naoEncontrado.find(k => k.includes('m17|17|4x100'));
+            const stillMissing = naoEncontrado.find(k => k.includes('m17|17x7|4x100'));
             if (stillMissing) dbg(`[3-MATCH 2ºpasse] ainda sem match após 2º passe → key="${stillMissing}"`);
             else dbg('[3-MATCH 2ºpasse] SKU não chegou ao 2º passe (não estava no PDF ou sem chave correspondente)');
         }
@@ -981,19 +980,21 @@ const saveStock = async (estoque, access_token, processCriticalUpdates) => {
             dbg('[4-COBERTURA] SKU não apareceu em nenhum grupo final');
         }
 
-        console.log(`\n--- DIAGNÓSTICO DE SKUs ---`);
-        console.log(`Rodas do PDF: ${registrosLimpos.length}`);
-        console.log(`  Atualizadas (com SKU): ${comSku.length}`);
-        console.log(`  Sem SKU no banco (sku=''): ${semSkuVazio.length} → esperado`);
-        console.log(`  Não encontradas no banco (novas): ${naoEncontrado.length}`);
-        console.log(`Total de rodas com SKU no banco: ${todasComSkuNoBanco.length}`);
-        console.log(`Rodas com SKU que NÃO foram atualizadas: ${naoAtualizadas.length}`);
+        logger.info({
+            rodasNoPDF: registrosLimpos.length,
+            atualizadasComSKU: comSku.length,
+            semSKUNoBanco: semSkuVazio.length,
+            naoEncontradasNoBanco: naoEncontrado.length,
+            totalComSKUNoBanco: todasComSkuNoBanco.length,
+            comSKUNaoCobertasPeloPDF: naoAtualizadas.length,
+        }, 'diagnostico de SKUs');
         if (naoAtualizadas.length > 0) {
-            console.warn(`[ATENÇÃO] As seguintes rodas têm SKU no banco mas não foram cobertas pelo PDF:`);
-            naoAtualizadas.forEach(r => {
-                const key = `${normalizeString(r.modelo)}|${normalizeString(r.aro)}|${normalizeString(r.pcd)}|${normalizeString(r.offset)}|${normalizeString(r.acabamento)}`;
-                console.warn(`  → ${key}  [SKU: ${r.sku}]`);
-            });
+            logger.warn({
+                rodas: naoAtualizadas.map(r => ({
+                    sku: r.sku,
+                    key: `${normalizeString(r.modelo)}|${normalizeString(r.aro)}|${normalizeString(r.pcd)}|${normalizeString(r.offset)}|${normalizeString(r.acabamento)}`
+                }))
+            }, 'rodas com SKU no banco nao cobertas pelo PDF');
         }
 
         // 4. PREPARAÇÃO DA LISTA DE ATUALIZAÇÃO EM MASSA (Nova Lógica)
@@ -1012,16 +1013,14 @@ const saveStock = async (estoque, access_token, processCriticalUpdates) => {
         let relatorioML = { atualizados: [], jaAtualizados: [], erros: [] };
         if (listaParaSincronizarML.length > 0) {
             try {
-                console.log(`[ML] Iniciando sincronização em massa de ${listaParaSincronizarML.length} SKUs...`);
+                logger.info({ skus: listaParaSincronizarML.length }, 'ML: iniciando sincronizacao em massa');
                 relatorioML = await processCriticalUpdates(listaParaSincronizarML, access_token);
             } catch (apiError) {
-                console.error('[ERRO DE API] Falha na atualização em massa do ML:', apiError.message);
+                logger.error({ err: apiError }, 'falha na atualizacao em massa do ML');
             }
         }
 
-        console.log(`\n--- SINCRONIZAÇÃO CONCLUÍDA ---`);
-        console.log(`Modelos processados: ${registrosLimpos.length}`);
-        console.log(`Anúncios enviados para atualização: ${listaParaSincronizarML.length}`);
+        logger.info({ modelosProcessados: registrosLimpos.length, anunciosEnviados: listaParaSincronizarML.length }, 'sincronizacao de estoque concluida');
 
         return {
             timestamp: new Date().toISOString(),
@@ -1051,7 +1050,7 @@ const saveStock = async (estoque, access_token, processCriticalUpdates) => {
 
     } catch (error) {
         if (transaction) await transaction.rollback();
-        console.error('Erro fatal ao sincronizar o estoque:', error);
+        logger.error({ err: error }, 'erro fatal ao sincronizar estoque');
         throw error;
     }
 };
@@ -1077,7 +1076,7 @@ const normalizeModelCodes = async () => {
         let totalUpdates = 0;
 
         try {
-            console.log("[Normalize] Iniciando transferência de estoque entre códigos de modelos...");
+            logger.info('Normalize: iniciando transferencia de estoque entre codigos de modelos');
 
             const modelCodes = Object.keys(MODEL_MAP); 
 
@@ -1111,23 +1110,23 @@ const normalizeModelCodes = async () => {
                         // Aplica o valor que o modelo de destino (ballina) possui
                         acabamentoParaBusca = 'sd (prata diamantada)';
                         furacaoCorrigida = '4x99';
-                        console.log(`[Normalize] Corrigindo acabamento 'hd' para 'sd' para correspondência do modelo ${targetModel}.`);
+                        logger.info({ sourceModel, targetModel }, "Normalize: corrigindo acabamento 'hd' para 'sd'");
                     }
 
                     if (sourceModel === 'g37') {
                         offsetCorrigido = '38';
-                        console.log(`[Normalize] Corrigindo offset 38 para correspondência do modelo ${targetModel}.`);
+                        logger.info({ sourceModel, targetModel }, 'Normalize: corrigindo offset para 38');
                     }
 
                     if (sourceModel === 'g37' && acabamentoParaBusca === 'bf (black fosco)' && (furacaoCorrigida === '4x108' || furacaoCorrigida === '5x100')) {
                         
                         acabamentoParaBusca = 'bf (black fosco.)';
-                        console.log(`[Normalize] Corrigindo acabamento bf (black fosco.) para correspondência do modelo ${targetModel}.`);
+                        logger.info({ sourceModel, targetModel }, 'Normalize: corrigindo acabamento bf (black fosco.)');
                     }
 
                     if (sourceModel === 'g37' && acabamentoParaBusca === 'ouro (ouro velho)') {
                         acabamentoParaBusca = 'ovf (ouro velho fosco)'
-                        console.log(`[Normalize] Corrigindo acabamento ouro (ouro velho) para correspondência do modelo ${targetModel}.`);
+                        logger.info({ sourceModel, targetModel }, 'Normalize: corrigindo acabamento ouro (ouro velho)');
                     }
 
                     // Condição de busca: LOCALIZA O MODELO DE DESTINO (Ex: 'sampso')
@@ -1164,12 +1163,12 @@ const normalizeModelCodes = async () => {
             }
 
             await transaction.commit();
-            console.log(`[Normalize] Transferência interna concluída. Total de ${totalUpdates} linhas de estoque atualizadas.`);
+            logger.info({ totalUpdates }, 'Normalize: transferencia interna concluida');
             return { success: true, updates: totalUpdates };
 
         } catch (error) {
             await transaction.rollback();
-            console.error('[Normalize] Erro fatal durante a normalização interna de modelos:', error);
+            logger.error({ err: error }, 'Normalize: erro fatal na normalizacao interna de modelos');
             throw error;
         }
 }
@@ -1189,7 +1188,7 @@ const normalizeModelCodes = async () => {
 //const getRoda = async (detalhesAnuncio) => {
 //    let quantidadeTotal;
 //    try{
-//        console.log("Capturando detalhes de estoque...")
+//        logger.info('capturando detalhes de estoque')
 //        let skuRodas = [];
 //        let quantidadesDisponiveis = [];
 //
@@ -1216,7 +1215,7 @@ const normalizeModelCodes = async () => {
 //                
 //            } else {
 //                quantidadeTotal = null
-//                console.warn(`[ESTOQUE] Não há sku correspondente no estoque da distribuidora para o SKU: ${skuRoda}`);
+//                logger.warn({ sku: skuRoda }, 'SKU sem correspondencia no estoque da distribuidora');
 //                return [];
 //            }
 //            
@@ -1230,7 +1229,7 @@ const normalizeModelCodes = async () => {
 //
 //        return quantidadesDisponiveis;
 //    }catch(error){
-//        console.error("Erro ao coletar quantidades disponíveis", error);
+//        logger.error({ err: error }, 'erro ao coletar quantidades disponiveis');
 //        throw error; // Lança o erro para o controller
 //    }
 //}
@@ -1252,7 +1251,7 @@ const getRoda = async (detalhesAnuncio) => {
 
     let quantidadeTotal;
     try{
-        console.log("Capturando detalhes de estoque...")
+        logger.info('capturando detalhes de estoque')
         let skuRodas = [];
         let quantidadesDisponiveis = [];
 
@@ -1288,9 +1287,11 @@ const getRoda = async (detalhesAnuncio) => {
                     dbg(`[5-GETROD] qtde_sp=${roda.qtde_sp} qtde_sc=${roda.qtde_sc} qtde_pr=${roda.qtde_pr} qtde_local=${roda.qtde_local} → quantidadeTotal=${quantidadeTotal} (useFullStock=${useFullStock})`);
                 }
             } else {
-                quantidadeTotal = null
-                console.warn(`[ESTOQUE] Não há sku correspondente no estoque da distribuidora para o SKU: ${skuRoda}`);
-                return [];
+                // SKU not found in stock (e.g. discontinued variation) — set to 0 and
+                // keep processing the remaining variations instead of aborting the listing
+                logger.warn({ sku: skuRoda }, 'SKU sem correspondencia no estoque: zerando variacao e continuando');
+                quantidadesDisponiveis.push({ sku: skuRoda, quantidade: 0 });
+                continue;
             }
             
 
@@ -1303,7 +1304,7 @@ const getRoda = async (detalhesAnuncio) => {
 
         return quantidadesDisponiveis;
     }catch(error){
-        console.error("Erro ao coletar quantidades disponíveis", error);
+        logger.error({ err: error }, 'erro ao coletar quantidades disponiveis');
         throw error; // Lança o erro para o controller
     }
 }
@@ -1323,14 +1324,14 @@ const mergeStockPrFromTemporary = async () => {
     });
 
     if (registrosTemporarios.length === 0) {
-        console.log("[Merge] Nenhuma quantidade positiva para 'qtde_pr' encontrada no estoque temporário.");
+        logger.info('Merge: nenhuma quantidade positiva para qtde_pr no estoque temporario');
         return { message: "Nenhuma atualização de estoque PR realizada." };
     }
 
     const transaction = await sequelize.transaction();
 
     try {
-        console.log(`[Merge] Encontrados ${registrosTemporarios.length} registros para tentar o matching...`);
+        logger.info({ registros: registrosTemporarios.length }, 'Merge: registros encontrados para matching');
 
         let updatesRealizados = 0;
 
@@ -1392,12 +1393,12 @@ const mergeStockPrFromTemporary = async () => {
                 updatesRealizados += updatedRows;
 
             }else {
-                console.log('linha não atualizada')
+                logger.warn({ modelo: tempRoda.modelo, aro: tempRoda.aro }, 'Merge: linha nao atualizada no estoque principal');
             }
         
         }
 
-        console.log('[Merge] Limpando valores NULL remanescentes em qtde_pr...');
+        logger.info('Merge: limpando valores NULL em qtde_pr');
         
         const [nullToZeroCount] = await Estoque.update(
             { qtde_pr: 0 },
@@ -1407,12 +1408,11 @@ const mergeStockPrFromTemporary = async () => {
             }
         );
         
-        console.log(`[Merge] Total de linhas alteradas de NULL para 0: ${nullToZeroCount}`);
+        logger.info({ nullToZeroCount }, 'Merge: linhas alteradas de NULL para 0');
 
         await transaction.commit();
 
-        console.log(`[Merge] Processo de atualização de qtde_pr concluído.`);
-        console.log(`Total de linhas atualizadas no Estoque principal: ${updatesRealizados}`);
+        logger.info({ updatesRealizados }, 'Merge: atualizacao de qtde_pr concluida');
 
         return { 
             success: true, 
@@ -1422,7 +1422,7 @@ const mergeStockPrFromTemporary = async () => {
     
     } catch (error) {
         await transaction.rollback();
-        console.error('[Merge] Erro fatal durante o merge de estoque PR:', error);
+        logger.error({ err: error }, 'Merge: erro fatal no merge de estoque PR');
         throw error;
     }
 }
@@ -1513,7 +1513,7 @@ const mergeStockPrFromTemporary = async () => {
 //                return;
 //            }
 //
-//            console.log(`[BAIXA ESTOQUE] Baixando ${quantidadeABaixar} unid. com a seguinte composição: ${logBaixa.join(' + ')}.`);
+//            logger.info({ sku, quantidade: quantidadeABaixar, composicao: logBaixa.join(' + ') }, 'baixa de estoque executada');
 //            
 //            // --- Execução da Atualização ---
 //            await Estoque.update(
@@ -1555,7 +1555,7 @@ const subtrairRodasDoEstoque = async (sku, quantidadeABaixar) => {
     const transaction = await sequelize.transaction();
     
     try {
-        console.log(`[BAIXA ESTOQUE] Iniciando baixa de ${quantidadeABaixar} unidades para SKU: ${sku}`);
+        logger.info({ sku, quantidade: quantidadeABaixar }, 'baixa de estoque iniciada');
 
         // 1. Busca os registros para verificar o estoque atual
         const rodas = await Estoque.findAll({
@@ -1565,7 +1565,7 @@ const subtrairRodasDoEstoque = async (sku, quantidadeABaixar) => {
         });
 
         if (rodas.length === 0) {
-            console.warn(`[BAIXA ESTOQUE] SKU '${sku}' não encontrado na tabela de estoque. Nenhuma baixa realizada.`);
+            logger.warn({ sku }, 'baixa de estoque: SKU nao encontrado, nenhuma baixa realizada');
             await transaction.rollback();
             return;
         }
@@ -1585,8 +1585,8 @@ const subtrairRodasDoEstoque = async (sku, quantidadeABaixar) => {
             }
             
             if (estoqueAtualTotal < quantidadeABaixar) {
-                 console.warn(`[BAIXA ESTOQUE] Estoque insuficiente (${estoqueAtualTotal} unid.) para a baixa de ${quantidadeABaixar} unid. para SKU: ${sku}.`);
-                 await transaction.rollback(); 
+                 logger.warn({ sku, estoqueAtual: estoqueAtualTotal, quantidadeABaixar }, 'baixa de estoque: estoque insuficiente');
+                 await transaction.rollback();
                  return;
             }
             
@@ -1629,12 +1629,12 @@ const subtrairRodasDoEstoque = async (sku, quantidadeABaixar) => {
 
             // --- Verificação Final ---
             if (restanteABaixar > 0) {
-                console.error("[BAIXA ESTOQUE] ERRO LÓGICO: Falha ao subtrair todas as unidades!");
+                logger.error({ sku, restanteABaixar }, 'baixa de estoque: ERRO LOGICO ao subtrair todas as unidades');
                 await transaction.rollback();
                 return;
             }
 
-            console.log(`[BAIXA ESTOQUE] Baixando ${quantidadeABaixar} unid. com a seguinte composição: ${logBaixa.join(' + ')}.`);
+            logger.info({ sku, quantidade: quantidadeABaixar, composicao: logBaixa.join(' + ') }, 'baixa de estoque executada');
             
             // --- Execução da Atualização ---
             await Estoque.update(
@@ -1653,11 +1653,11 @@ const subtrairRodasDoEstoque = async (sku, quantidadeABaixar) => {
         
         await transaction.commit(); // Confirma a transação
         
-        console.log(`[BAIXA ESTOQUE] Baixa concluída para SKU: ${sku}. ${quantidadeABaixar} unidades subtraídas com sucesso.`);
+        logger.info({ sku, quantidadeABaixar }, 'baixa de estoque concluida');
 
     } catch (error) {
-        await transaction.rollback(); // Desfaz a transação em caso de erro
-        console.error(`Erro fatal durante a baixa de estoque do SKU ${sku}:`, error);
+        await transaction.rollback();
+        logger.error({ err: error, sku }, 'erro fatal na baixa de estoque');
         throw error;
     }
 };
@@ -1672,7 +1672,7 @@ const subtrairRodasDeUmAnuncioDuasTalas = async (sku, quantidadeABaixar) => {
     const transaction = await sequelize.transaction();
     
     try {
-        console.log(`[BAIXA ESTOQUE] Iniciando baixa de ${quantidadeABaixar/2} unidades para SKU: ${sku}`);
+        logger.info({ sku, quantidade: quantidadeABaixar / 2 }, 'baixa de estoque duas talas iniciada');
 
         // 1. Busca os registros para verificar o estoque atual
         if(sku === 'M08ARO14675-114BD'){
@@ -1709,7 +1709,7 @@ const subtrairRodasDeUmAnuncioDuasTalas = async (sku, quantidadeABaixar) => {
 
 
         if (rodas.length !== 2) {
-            console.warn(`[BAIXA ESTOQUE] SKU '${sku}' não encontrado na tabela de estoque. Nenhuma baixa realizada.`);
+            logger.warn({ sku, rodasEncontradas: rodas.length }, 'baixa duas talas: SKU nao encontrado ou incompleto, nenhuma baixa realizada');
             await transaction.rollback();
             return;
         }
@@ -1720,7 +1720,7 @@ const subtrairRodasDeUmAnuncioDuasTalas = async (sku, quantidadeABaixar) => {
             const estoqueAtualTotal = roda.qtde_sp + roda.qtde_sc;
             
             if (estoqueAtualTotal < (quantidadeABaixar/2)) {
-                 console.warn(`[BAIXA ESTOQUE] Estoque insuficiente (${estoqueAtualTotal} unid.) para a baixa de ${quantidadeABaixar/2} unid. para SKU: ${sku}.`);
+                 logger.warn({ sku, estoqueAtual: estoqueAtualTotal, quantidadeNecessaria: quantidadeABaixar / 2 }, 'baixa duas talas: estoque insuficiente');
                  await transaction.rollback(); // Cancela TUDO se o estoque for insuficiente em uma das talas
                  return;
             }
@@ -1733,8 +1733,7 @@ const subtrairRodasDeUmAnuncioDuasTalas = async (sku, quantidadeABaixar) => {
             
             if (roda.qtde_sp >= (quantidadeABaixar/2)) {
 
-                
-                console.log(`[BAIXA ESTOQUE] Baixando ${quantidadeABaixar/2} unidades do estoque SP.`);
+                logger.info({ sku, quantidade: quantidadeABaixar / 2, fonte: 'SP' }, 'baixa duas talas: baixando de SP');
                 novaQtdeSP = roda.qtde_sp - quantidadeABaixar/2;
 
             } else if (roda.qtde_sp > 0 && roda.qtde_sp < (quantidadeABaixar/2)) {
@@ -1748,11 +1747,11 @@ const subtrairRodasDeUmAnuncioDuasTalas = async (sku, quantidadeABaixar) => {
                 // Baixa de SC (garantido que qtdeFaltanteSC é > 0 e <= 4)
                 novaQtdeSC = roda.qtde_sc - qtdeFaltanteSC;
                 
-                console.log(`[BAIXA ESTOQUE] Usando ${qtdeBaixadaSP} unid. de SP e ${qtdeFaltanteSC} unid. de SC.`);
+                logger.info({ sku, qtdeSP: qtdeBaixadaSP, qtdeSC: qtdeFaltanteSC }, 'baixa duas talas: usando SP e SC');
 
             } else if (roda.qtde_sp === 0) {
 
-                console.log(`[BAIXA ESTOQUE] Usando 4 unidades do estoque SC.`);
+                logger.info({ sku, quantidade: quantidadeABaixar / 2, fonte: 'SC' }, 'baixa duas talas: baixando de SC');
 
                 novaQtdeSC = roda.qtde_sc - (quantidadeABaixar/2);
                 
@@ -1777,11 +1776,11 @@ const subtrairRodasDeUmAnuncioDuasTalas = async (sku, quantidadeABaixar) => {
         
         await transaction.commit(); // Confirma a transação
         
-        console.log(`[BAIXA ESTOQUE] Baixa concluída para SKU: ${sku}. 4 unidades subtraídas (se houvesse estoque).`);
+        logger.info({ sku }, 'baixa duas talas concluida');
 
     } catch (error) {
-        await transaction.rollback(); // Desfaz a transação em caso de erro
-        console.error(`Erro fatal durante a baixa de estoque do SKU ${sku}:`, error);
+        await transaction.rollback();
+        logger.error({ err: error, sku }, 'erro fatal na baixa de estoque duas talas');
         throw error;
     }
 };
@@ -1797,7 +1796,7 @@ const getRodaDetailsBySku = async (sku) => {
         });
         return roda;
     } catch (error) {
-        console.error(`[StockService] Erro ao buscar detalhes da roda para SKU ${sku}:`, error);
+        logger.error({ err: error, sku }, 'erro ao buscar detalhes da roda');
         return null;
     }
 }
@@ -1810,7 +1809,7 @@ const saveLocalStock = async (dadosPlanilha) => {
     let skusAtualizados = 0;
     
     try {
-        console.log("Iniciando atualização de estoque local...");
+        logger.info('iniciando atualizacao de estoque local');
 
         // 1. Zera o estoque local antigo para garantir fidelidade à nova planilha
         await Estoque.update({ qtde_local: 0 }, { where: {}, transaction });
@@ -1842,20 +1841,14 @@ const saveLocalStock = async (dadosPlanilha) => {
 
         await transaction.commit();
 
-        // --- EXIBIÇÃO DO LOG ---
-        console.log(`\n--- RESUMO DO PROCESSO LOCAL ---`);
-        console.log(`✅ SKUs atualizados no banco: ${skusAtualizados}`);
-        
+        logger.info({ skusAtualizados, skusIgnorados: skusNaoEncontrados.length }, 'estoque local atualizado');
         if (skusNaoEncontrados.length > 0) {
-            console.warn(`⚠️ SKUs ignorados (não encontrados no banco): ${skusNaoEncontrados.length}`);
-            console.log(`Lista de SKUs ignorados:`, skusNaoEncontrados);
-        } else {
-            console.log(`✨ Todos os SKUs da planilha foram encontrados no banco.`);
+            logger.warn({ skus: skusNaoEncontrados }, 'SKUs da planilha nao encontrados no banco');
         }
         
     } catch (error) {
         if (transaction) await transaction.rollback();
-        console.error("❌ Erro fatal ao salvar estoque local:", error);
+        logger.error({ err: error }, 'erro fatal ao salvar estoque local');
         throw error;
     }
 };
