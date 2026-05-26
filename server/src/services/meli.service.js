@@ -9,6 +9,12 @@ const DEBUG_SKU = 'M17ARO174-1004-108HD';
 let _debugTrace = [];
 const dbg = (msg) => { _debugTrace.push(msg); logger.debug({ sku: DEBUG_SKU }, msg); };
 
+// ML IDs being watched for diagnostic — search "[DEBUG-ANUNCIO]" in Railway logs
+const DEBUG_ML_IDS = new Set(['MLB6082884922', 'MLB6082770068']);
+const dbgML = (ml_id, stage, data = {}) => {
+    logger.warn({ ...data, ml_id, stage, tag: 'DEBUG-ANUNCIO' }, `[DEBUG-ANUNCIO] ${stage} | ml_id=${ml_id}`);
+};
+
 const SELLER_ID = process.env.SELLER_ID;
 const SECRET_KEY = process.env.SECRET_KEY;
 const ACCESS_TOKEN = process.env.ACCESS_TOKEN;
@@ -560,13 +566,29 @@ const processCriticalUpdates = async(mudancasCriticas,access_token) => {
                 try {
                     listaMLIDs = await anunciosService.getAnunciosBySku(rodaAlterada.sku);
 
+                    // Check if any of our watched ML IDs were returned for this SKU
+                    const debugHit = listaMLIDs.some(m => DEBUG_ML_IDS.has(m.ml_id));
+                    if (debugHit) {
+                        dbgML('batch', '0-SKU-LOOKUP', { sku: rodaAlterada.sku, totalAnuncios: listaMLIDs.length, ml_ids: listaMLIDs.map(m => m.ml_id) });
+                    }
+
                     for(const ML_ID of listaMLIDs){
+
+                        const isDebugML = DEBUG_ML_IDS.has(ML_ID.ml_id);
+
+                        if (isDebugML) dbgML(ML_ID.ml_id, '1-ENCONTRADO', { sku: rodaAlterada.sku });
 
                         const detalhesAnuncio = await anunciosService.getAnuncio(ML_ID.ml_id);
 
+                        if (isDebugML) dbgML(ML_ID.ml_id, '2-DETALHES', { detalhesAnuncio });
+
                         const detalhesEstoque = await stockService.getRoda(detalhesAnuncio);
 
+                        if (isDebugML) dbgML(ML_ID.ml_id, '3-ESTOQUE', { detalhesEstoque });
+
                         const updatePayload = anunciosService.generateUpdatePayload(detalhesAnuncio, detalhesEstoque)
+
+                        if (isDebugML) dbgML(ML_ID.ml_id, '4-PAYLOAD', { updatePayload });
 
                         if (rodaAlterada.sku === DEBUG_SKU) {
                             dbg(`[6-PAYLOAD] ml_id=${ML_ID.ml_id} payload=${JSON.stringify(updatePayload)}`);
@@ -575,6 +597,8 @@ const processCriticalUpdates = async(mudancasCriticas,access_token) => {
                         await delay(DELAY_MS);
 
                         const resultado = await updateEstoqueAnuncio(detalhesAnuncio, access_token, updatePayload)
+
+                        if (isDebugML) dbgML(ML_ID.ml_id, '5-RESULTADO', { status: resultado?.status ?? 'ok', resultado });
 
                         if (rodaAlterada.sku === DEBUG_SKU) {
                             dbg(`[6-RESULT] ml_id=${ML_ID.ml_id} status=${resultado?.status ?? 'ok'}`);
