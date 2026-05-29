@@ -5,6 +5,13 @@ const logger = require('../config/logger');
 
 // Change this SKU to trace any model through the full update flow
 const DEBUG_SKU = 'M17ARO174-1004-108HD';
+
+// Maps each virtual combo SKU to the two physical component SKUs it bundles.
+// Each sale of a combo removes quantidadeVendida/2 from each component.
+const COMBO_SKU_MAP = {
+    'M08ARO14675-114BD':  ['M08ARO1465-114BD',  'M08ARO1475-114BD'],
+    'M08ARO14675-114FBD': ['M08ARO1465-114FBD', 'M08ARO1475-114FBD'],
+};
 let _debugTrace = [];
 const dbg = (msg) => { _debugTrace.push(msg); logger.debug({ sku: DEBUG_SKU }, msg); };
 const getDebugTrace = () => _debugTrace;
@@ -1000,6 +1007,15 @@ const saveStock = async (estoque, access_token, processCriticalUpdates) => {
         // 4. PREPARAÇÃO DA LISTA DE ATUALIZAÇÃO EM MASSA (Nova Lógica)
         const listaParaSincronizarML = comSku.map(({ sku }) => ({ sku }));
 
+        // If a component SKU changed, also push its combo SKU so the paired listing gets updated.
+        const skusNaLista = new Set(listaParaSincronizarML.map(s => s.sku));
+        for (const [comboSku, componentSkus] of Object.entries(COMBO_SKU_MAP)) {
+            if (componentSkus.some(s => skusNaLista.has(s))) {
+                listaParaSincronizarML.push({ sku: comboSku });
+                logger.info({ comboSku }, 'componente atualizado: adicionando SKU combo a lista ML');
+            }
+        }
+
         // 5. ATUALIZAÇÃO DO BANCO DE DADOS
         // Importante: Não incluímos 'sku' no updateOnDuplicate para preservar os SKUs já cadastrados
         await Estoque.bulkCreate(registrosLimpos, {
@@ -1264,6 +1280,23 @@ const getRoda = async (detalhesAnuncio) => {
 
         for(const skuRoda of skuRodas){
 
+            // Special case: virtual combo SKU that bundles two rim-width variants.
+            // Available sets = floor(min(stock_aro6, stock_aro7) / 2).
+            // We return 2*min so that generateUpdatePayload's floor(bruta/4) = floor(min/2).
+            if (COMBO_SKU_MAP[skuRoda]) {
+                const [sku1, sku2] = COMBO_SKU_MAP[skuRoda];
+                const [r1, r2] = await Promise.all([
+                    Estoque.findOne({ where: { sku: sku1 }, raw: true }),
+                    Estoque.findOne({ where: { sku: sku2 }, raw: true }),
+                ]);
+                const q1 = r1 ? (useFullStock ? r1.qtde_sp + r1.qtde_sc + r1.qtde_pr + r1.qtde_loca : r1.qtde_sp + r1.qtde_local) : 0;
+                const q2 = r2 ? (useFullStock ? r2.qtde_sp + r2.qtde_sc + r2.qtde_pr + r2.qtde_loca : r2.qtde_sp + r2.qtde_local) : 0;
+                const minQ = Math.min(q1, q2);
+                logger.info({ comboSku: skuRoda, sku1, q1, sku2, q2, minQ, quantidade: 2 * minQ }, 'getRoda combo: calculando quantidade minima');
+                quantidadesDisponiveis.push({ sku: skuRoda, quantidade: 2 * minQ });
+                continue;
+            }
+
             let roda = await Estoque.findOne({
                where: {
                    sku: skuRoda
@@ -1293,7 +1326,7 @@ const getRoda = async (detalhesAnuncio) => {
                 quantidadesDisponiveis.push({ sku: skuRoda, quantidade: 0 });
                 continue;
             }
-            
+
 
             quantidadesDisponiveis.push({
                 sku: skuRoda, // É bom salvar o SKU para referência
@@ -1787,6 +1820,36 @@ const subtrairRodasDeUmAnuncioDuasTalas = async (sku, quantidadeABaixar) => {
 
 // ==============================================================================================================================
 
+// Called by the sales scheduler to confirm a combo-SKU sale maps to real stock entries.
+// Returns a non-empty array when both component wheels exist in estoque_rodas_distribuidora.
+const getRodaDeVendaDuasTalas = async (detalhesAnuncio) => {
+    const comboSku = detalhesAnuncio[0]?.sku;
+    const componentSkus = COMBO_SKU_MAP[comboSku];
+    if (!componentSkus) {
+        logger.warn({ sku: comboSku }, 'getRodaDeVendaDuasTalas: SKU combo nao mapeado');
+        return [];
+    }
+    try {
+        const [r1, r2] = await Promise.all([
+            Estoque.findOne({ where: { sku: componentSkus[0] }, raw: true }),
+            Estoque.findOne({ where: { sku: componentSkus[1] }, raw: true }),
+        ]);
+        if (!r1 || !r2) {
+            logger.warn({ comboSku, sku1: componentSkus[0], sku2: componentSkus[1], found1: !!r1, found2: !!r2 }, 'getRodaDeVendaDuasTalas: componentes do combo nao encontrados no estoque');
+            return [];
+        }
+        return [
+            { sku: componentSkus[0], quantidade: r1.qtde_sp + r1.qtde_local },
+            { sku: componentSkus[1], quantidade: r2.qtde_sp + r2.qtde_local },
+        ];
+    } catch (error) {
+        logger.error({ err: error, comboSku }, 'erro em getRodaDeVendaDuasTalas');
+        throw error;
+    }
+};
+
+// ==============================================================================================================================
+
 const getRodaDetailsBySku = async (sku) => {
     try {
         const roda = await Estoque.findOne({
@@ -1860,6 +1923,7 @@ module.exports = {
     saveStock,
     saveStockSul,
     getRoda,
+    getRodaDeVendaDuasTalas,
     subtrairRodasDoEstoque,
     subtrairRodasDeUmAnuncioDuasTalas,
     normalizeModelCodes,
