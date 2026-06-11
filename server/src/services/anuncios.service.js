@@ -1,5 +1,6 @@
 require('dotenv').config();
 const fs = require('fs').promises;
+const logger = require('../config/logger');
 const path = require('path');
 const { Anuncio, sequelize } = require('../config/database');
 const STORE_ID = parseInt(process.env.STORE_ID, 10);
@@ -45,9 +46,9 @@ const salvarAnuncios = async (anuncios) => {
         if (registrosParaInserir.length > 0) {
             await Anuncio.bulkCreate(registrosParaInserir);
         }
-        console.log(`Dados de ${skusSalvos} SKUs inseridos/atualizados com sucesso na tabela 'anuncios'.`);
+        logger.info({ skusSalvos }, 'anuncios salvos na tabela anuncios');
     } catch (error) {
-        console.error("Erro ao salvar os anúncios:", error);
+        logger.error({ err: error }, 'erro ao salvar anuncios');
         throw error; // Lança o erro para o controller
     }
 };
@@ -78,7 +79,7 @@ const getAnuncio = async (id_anuncio) => {
         return (detalhesAnuncio);
 
     }catch(error){
-        console.error("Erro ao capturar anúncio", error);
+        logger.error({ err: error }, 'erro ao capturar anuncio');
         throw error; // Lança o erro para o controller
     }
 }
@@ -112,7 +113,7 @@ const getAnunciosBySku = async (sku) => {
         return (listaMLIDsDoMesmoSku);
 
     }catch(error){
-        console.error("Erro ao capturar anúncio", error);
+        logger.error({ err: error }, 'erro ao capturar anuncio');
         throw error; // Lança o erro para o controller
     }
 }
@@ -126,7 +127,7 @@ const getAnunciosBySkuForStore = async (sku, storeId) => {
         });
         return arrayAnuncios.map(a => ({ ml_id: a.ml_id }));
     } catch (error) {
-        console.error("Erro ao capturar anúncio", error);
+        logger.error({ err: error }, 'erro ao capturar anuncio');
         throw error;
     }
 };
@@ -144,7 +145,7 @@ const getAnuncioForStore = async (id_anuncio, storeId) => {
             isUnitario: a.isUnitario
         }));
     } catch (error) {
-        console.error("Erro ao capturar anúncio", error);
+        logger.error({ err: error }, 'erro ao capturar anuncio');
         throw error;
     }
 };

@@ -1,5 +1,6 @@
 const meliService = require('../services/meli.service');
 const anuncioService = require('../services/anuncios.service');
+const logger = require('../config/logger');
 const stockService = require('../services/stock.service');
 const { run, all } = require('../config/database');
 
@@ -10,7 +11,7 @@ exports.getAnunciosSkusController = async (req, res) => {
     try{
         const resposta = await meliService.authTest();
         if(!resposta){
-            console.log("Token Inválido. Gerando um novo...")
+            logger.info('token invalido, gerando novo token');
             access_token = await meliService.getAuth();
         }
         else{
@@ -29,7 +30,7 @@ exports.getAnunciosSkusController = async (req, res) => {
         res.status(200).send("Anúncios Capturados com sucesso!");
     }
     catch(error){
-        console.error("Erro ao capturar anúncios:", error);
+        logger.error({ err: error }, 'erro ao capturar anuncios');
         res.status(500).json({ error: "Erro ao capturar anúncios." })    
     }
 
@@ -45,7 +46,7 @@ exports.putAnunciosEstoqueController = async (req, res) => {
         try{
             const resposta = await meliService.authTest();
             if(!resposta){
-                console.log("Token Inválido. Gerando um novo...")
+                logger.info('token invalido, gerando novo token')
                 access_token = await meliService.getAuth();
             }
             else{
@@ -60,10 +61,15 @@ exports.putAnunciosEstoqueController = async (req, res) => {
                 let missingSku = false;
             
                 const detalhesAnuncio = await anuncioService.getAnuncio(anuncio);
-                console.log(detalhesAnuncio);
+                logger.info({ detalhesAnuncio }, 'detalhes do anuncio');
 
             //pega as infos da roda com o sku do anuncio
                 const detalhesEstoque = await stockService.getRoda(detalhesAnuncio);
+
+                if (detalhesEstoque.length === 0) {
+                    logger.info({ anuncio }, 'anuncio sem nenhum SKU de roda no estoque: ignorando atualizacao');
+                    continue;
+                }
 
                 for (const detalheEstoque of detalhesEstoque){
 
@@ -90,7 +96,7 @@ exports.putAnunciosEstoqueController = async (req, res) => {
         }
         catch(error){
 
-            console.error("Erro ao atualizar estoque do anúncio:", error);
+            logger.error({ err: error }, 'erro ao atualizar estoque do anuncio');
             res.status(500).json({ error: "Erro ao atualizar estoque do anúncio" })
 
         }

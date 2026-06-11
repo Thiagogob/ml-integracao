@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const logger = require('../config/logger');
 const pdfService = require('../services/pdf.service');
 const stockService = require('../services/stock.service');
 const meliService = require('../services/meli.service');
@@ -22,7 +23,7 @@ exports.uploadStockController = async (req, res) => {
                 
         const resposta = await meliService.authTest();
         if(!resposta){
-            console.log("Token Inválido. Gerando um novo...")
+            logger.info('token invalido, gerando novo token');
             access_token = await meliService.getAuth();
         }
         else{
@@ -46,14 +47,14 @@ exports.uploadStockController = async (req, res) => {
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
             const logPath = path.join(LOGS_DIR, `sync-${timestamp}.json`);
             fs.writeFileSync(logPath, JSON.stringify(diagnostico, null, 2), 'utf8');
-            console.log(`[LOG] Relatório salvo em: ${logPath}`);
+            logger.info({ logPath }, 'relatorio de sincronizacao salvo');
         }
 
         // 5. Envia a resposta final para o cliente
         return res.json({ message: "Estoque processado e salvo com sucesso!"});
 
     } catch (err) {
-        console.error(err);
+        logger.error({ err }, 'erro no controller de stock');
         return res.status(500).json({ error: 'Falha ao processar o arquivo.' });
     }
 };
@@ -93,7 +94,7 @@ exports.uploadStockSulController = async (req, res) => {
         return res.json({ message: "Estoque do Sul processado e salvo na tabela temporária para análise!"});
 
     } catch (err) {
-        console.error(err);
+        logger.error({ err }, 'erro no controller de stock');
         return res.status(500).json({ error: 'Falha ao processar o arquivo de estoque do Sul.' });
     }
 };
@@ -114,7 +115,7 @@ exports.getRodasPedidosPage = async (req, res) => {
 
         
     } catch (err){
-        console.error(err);
+        logger.error({ err }, 'erro no controller de stock');
         return res.status(500).json({ error: 'Falha ao carregar detalhes das rodas para gerar pedido.' });
     }
 };
@@ -139,7 +140,7 @@ exports.uploadLocalStockController = async (req, res) => {
         return res.json({ message: "Estoque local processado e integrado com sucesso!" });
 
     } catch (err) {
-        console.error("Erro ao processar planilha local:", err);
+        logger.error({ err }, 'erro ao processar planilha local');
         return res.status(500).json({ error: 'Falha ao processar o arquivo Excel.' });
     }
 };

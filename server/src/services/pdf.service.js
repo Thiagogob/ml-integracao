@@ -1,5 +1,6 @@
 // /server/src/services/pdf.service.js
 const pdfParse = require('pdf-parse');
+const logger = require('../config/logger');
 
 const parsePdf = async (fileBuffer) => {
   try {
@@ -15,7 +16,7 @@ const parsePdf = async (fileBuffer) => {
 
     return cleanText;
   } catch (err) {
-    console.error("Erro ao processar PDF:", err);
+    logger.error({ err }, 'erro ao processar PDF');
     throw new Error('Falha ao fazer o parsing do PDF');
   }
 };

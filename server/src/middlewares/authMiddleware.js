@@ -1,10 +1,10 @@
 const jwt = require('jsonwebtoken');
+const logger = require('../config/logger');
 
-const JWT_SECRET = process.env.JWT_SECRET; 
+const JWT_SECRET = process.env.JWT_SECRET;
 
 if (!JWT_SECRET) {
-    console.error("ERRO CRÍTICO: JWT_SECRET não está definida nas variáveis de ambiente!");
-
+    logger.error('ERRO CRITICO: JWT_SECRET nao esta definida nas variaveis de ambiente');
 }
 
 exports.protect = (req, res, next) => {
@@ -31,7 +31,7 @@ exports.protect = (req, res, next) => {
 
     } catch (error) {
         // Captura erros como: Token expirado, Assinatura inválida (adulterado)
-        console.error('Erro de verificação JWT:', error.message);
+        logger.error({ err: error }, 'erro de verificacao JWT');
         return res.status(403).json({ message: 'Token inválido ou expirado.' });
     }
 };

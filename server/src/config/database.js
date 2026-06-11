@@ -3,6 +3,7 @@
 const { Sequelize, DataTypes } = require('sequelize');
 const path = require('path');
 const bcrypt = require('bcrypt');
+const logger = require('./logger');
 const SALT_ROUNDS = 10; // Número de rounds para a criptografia
 
 
@@ -216,9 +217,9 @@ Venda.belongsTo(Estoque, {
 const syncDb = async () => {
     try {
         await sequelize.authenticate();
-        console.log('Conexão com o banco de dados PostgreSQL foi estabelecida com sucesso.');
+        logger.info('conexao com PostgreSQL estabelecida com sucesso');
     } catch (error) {
-        console.error('Não foi possível conectar ao banco de dados:', error);
+        logger.error({ err: error }, 'nao foi possivel conectar ao banco de dados');
         process.exit(1);
     }
 };

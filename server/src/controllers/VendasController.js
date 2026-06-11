@@ -1,5 +1,6 @@
 const meliService = require('../services/meli.service');
 const vendasService = require('../services/vendas.service');
+const logger = require('../config/logger');
 
 exports.getVendasController = async (req, res) => {
   try {
@@ -7,11 +8,11 @@ exports.getVendasController = async (req, res) => {
     let resultado;
 
     if (resposta) {
-      console.log("Token válido!");
+      logger.info('token valido');
       resultado = await meliService.getVendas(resposta);
 
     } else {
-      console.log("Token inválido!");
+      logger.info('token invalido, gerando novo token');
       const access_token = await meliService.getAuth();
       resultado = await meliService.getVendas(access_token);
     }
@@ -20,7 +21,7 @@ exports.getVendasController = async (req, res) => {
     await vendasService.salvarVendas(resultado.results);
     res.status(200).send("Vendas sincronizadas com sucesso!");
   } catch (error) {
-    console.error("Erro ao sincronizar vendas:", error);
+    logger.error({ err: error }, 'erro ao sincronizar vendas');
     res.status(500).json({ error: "Erro ao sincronizar vendas." });
   }
 };
@@ -33,7 +34,7 @@ exports.listarVendas = async (req, res) => {
             return res.status(200).json(vendas);
 
         } catch (error) {
-            console.error('[VendaController] Erro:', error.message);
+            logger.error({ err: error }, 'erro ao listar vendas');
             
 
             return res.status(500).json({ 
@@ -55,7 +56,7 @@ exports.marcarComoColetada = async (req, res) => {
             const result = await vendasService.marcarComoColetada(idVenda);
             return res.status(200).json(result);
         } catch (error) {
-            console.error(`[VendasController] Erro ao marcar coleta: ${error.message}`);
+            logger.error({ err: error }, 'erro ao marcar venda como coletada');
             return res.status(500).json({ error: 'Falha ao atualizar status de coleta.', details: error.message });
         }
         

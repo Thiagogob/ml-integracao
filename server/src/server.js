@@ -1,5 +1,6 @@
 const express = require('express');
 const path = require('path');
+const logger = require('./config/logger');
 
 // 1. CARREGAR VARIÁVEIS DE AMBIENTE
 
@@ -35,12 +36,12 @@ const startServer = async () => {
         
         // Inicia o servidor Express
         server = app.listen(PORT, () => {
-            console.log(`Servidor rodando em http://localhost:${PORT}`);
+            logger.info({ port: PORT }, 'servidor iniciado');
             startSalesScheduler();
         });
 
     } catch (error) {
-        console.error('Falha ao iniciar a aplicação:', error.message);
+        logger.error({ err: error }, 'falha ao iniciar a aplicacao');
         process.exit(1);
     }
 };
@@ -49,20 +50,18 @@ startServer();
 
 // GERENCIAMENTO DE DESLIGAMENTO 
 process.on('SIGINT', () => {
-    console.log('\nRecebido sinal de interrupção. Encerrando o servidor...');
-    
-    // Fecha o servidor Express primeiro
+    logger.info('SIGINT recebido, encerrando servidor');
+
     server.close(async () => {
-        console.log('Servidor Express fechado.');
-        
-        // Fecha a conexão do Sequelize (que representa a conexão PostgreSQL)
+        logger.info('servidor Express fechado');
+
         await sequelize.close()
             .then(() => {
-                console.log('Conexão com o banco de dados fechada. Processo encerrado.');
+                logger.info('conexao com banco fechada, encerrando processo');
                 process.exit(0);
             })
             .catch((err) => {
-                console.error('Erro ao fechar a conexão do Sequelize:', err.message);
+                logger.error({ err }, 'erro ao fechar conexao do Sequelize');
                 process.exit(1);
             });
     });

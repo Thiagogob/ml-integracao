@@ -1,5 +1,6 @@
 const { Anuncio, Estoque, SyncControl, sequelize } = require('../config/database');
 const vendasService = require('../services/vendas.service');
+const logger = require('../config/logger');
 
 /**
  * Busca dados de resumo e métricas chave para o dashboard.
@@ -49,7 +50,7 @@ const getSummaryData = async () => {
         };
 
     } catch (error) {
-        console.error("Erro no serviço de dashboard:", error);
+        logger.error({ err: error }, 'erro no servico de dashboard');
         throw new Error('Falha ao buscar dados de resumo do DB.');
     }
 };

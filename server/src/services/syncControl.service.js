@@ -1,5 +1,6 @@
 
 const { SyncControl } = require('../config/database');
+const logger = require('../config/logger');
 const { Op } = require('sequelize');
 
 const CHECKPOINT_ID = 'last_sale_sync';
@@ -22,8 +23,8 @@ const getCheckpoint = async () => {
         return null; 
 
     } catch (error) {
-        console.error(`Erro ao buscar o checkpoint de sincronização: ${error.message}`);
-        return null; 
+        logger.error({ err: error }, 'erro ao buscar checkpoint de sincronizacao');
+        return null;
     }
 };
 
@@ -42,10 +43,10 @@ const updateCheckpoint = async (newTimestamp) => {
             await SyncControl.create({ id: CHECKPOINT_ID, store_id: STORE_ID, last_timestamp: new Date(newTimestamp) });
         }
         
-        console.log(`[Checkpoint] Ponto de sincronização atualizado para: ${new Date(newTimestamp).toISOString()}`);
+        logger.info({ timestamp: new Date(newTimestamp).toISOString() }, 'checkpoint de sincronizacao atualizado');
 
     } catch (error) {
-        console.error(`Erro ao atualizar o checkpoint para ${newTimestamp}: ${error.message}`);
+        logger.error({ err: error, newTimestamp }, 'erro ao atualizar checkpoint');
         throw error;
     }
 };

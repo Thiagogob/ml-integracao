@@ -1,4 +1,5 @@
 const { Venda, Estoque, Anuncio} = require('../config/database');
+const logger = require('../config/logger');
 const { Sequelize } = require('sequelize');
 const syncControlService = require('./syncControl.service');
 const meliService = require('./meli.service');
@@ -23,7 +24,7 @@ const marcarComoColetada = async (idVenda) => {
 
             return { success: true, message: `Venda ${idVenda} marcada como coletada.` };
         } catch (error) {
-            console.error(`[VendasService] Erro ao marcar venda ${idVenda} como coletada:`, error.message);
+            logger.error({ err: error, idVenda }, 'erro ao marcar venda como coletada');
             throw new Error(`Falha ao atualizar status de coleta: ${error.message}`);
         }
 }
@@ -69,7 +70,7 @@ const getTop5RodasVendidas = async () => {
             }));
 
         } catch (error) {
-            console.error('[VendasService] Erro ao buscar Top 5 Vendas:', error);
+            logger.error({ err: error }, 'erro ao buscar top 5 vendas');
             throw new Error('Falha ao calcular o Top 5 de vendas.');
         }
 }
@@ -144,7 +145,7 @@ const indiceAtencaoLiteral = literal(`
             }));
 
         } catch (error) {
-            console.error('[VendasService] Erro ao buscar Top 5 Rodas que precisam de atenção:', error);
+            logger.error({ err: error }, 'erro ao buscar rodas de atencao');
             throw new Error('Falha ao calcular o Índice de Risco de Estoque.');
         }
     }
@@ -233,7 +234,7 @@ const listarTodasAsVendas = async () => {
             }); // Retorna um array de instâncias Venda (que o Express converte para JSON)
 
         } catch (error) {
-            console.error('[VendaService] Erro ao listar vendas:', error);
+            logger.error({ err: error }, 'erro ao listar vendas');
             // Propaga o erro para que o Controller possa lidar com a resposta HTTP
             throw new Error('Falha na consulta ao banco de dados.'); 
         }
@@ -253,7 +254,7 @@ const preencherDisponibilidade = async (idVenda, sku, quantidadeNecessaria) => {
 
             if (!estoque) {
                 // Se o SKU não for encontrado no estoque (algo errado), mantém "pendência"
-                console.warn(`[VendasService] SKU ${sku} não encontrado na tabela Estoque. Marcando como 'pendência'.`);
+                logger.warn({ sku }, 'SKU nao encontrado no estoque, marcando como pendencia');
                 novoStatus = 'pendencia';
             } else {
                 const qtdeSP = estoque.qtde_sp;
@@ -286,7 +287,7 @@ const preencherDisponibilidade = async (idVenda, sku, quantidadeNecessaria) => {
             });
 
         } catch (error) {
-            console.error(`[VendasService] Erro fatal ao preencher disponibilidade para Venda ${idVenda}:`, error.message);
+            logger.error({ err: error, idVenda }, 'erro ao preencher disponibilidade');
             // Loga o erro, mas permite que o Scheduler continue
         }
 }
@@ -296,7 +297,7 @@ const preencherDisponibilidade = async (idVenda, sku, quantidadeNecessaria) => {
 
 const salvarVendas = async (vendas) => {
     try{
-        console.log("Iniciando o salvamento de vendas no banco de dados...");
+        logger.info('iniciando salvamento de vendas');
         let registrosParaInserir = [];
     for (const venda of vendas) {
         
@@ -329,13 +330,13 @@ const salvarVendas = async (vendas) => {
             
             const vendasSalvas = novosRegistros.length;
 
-            console.log(`Dados de ${vendasSalvas} novas vendas salvas no banco de dados.`);
+            logger.info({ vendasSalvas }, 'novas vendas salvas');
             
         } else {
-            console.log("Nenhuma venda para processar.");
+            logger.info('nenhuma venda nova para processar');
         }
     } catch(error){
-         console.error('Erro ao salvar as vendas:', error);
+         logger.error({ err: error }, 'erro ao salvar vendas');
             throw error; // Lança o erro para que o controller o capture
     }
         
@@ -354,7 +355,7 @@ try {
 
     } catch (error) {
 
-        console.error(`Erro ao buscar vendas do anúncio ${id_anuncio}:`, error);
+        logger.error({ err: error }, 'erro ao buscar vendas do banco');
 
         throw error
 
@@ -496,7 +497,7 @@ const countDailyRodasVendidas = async() => {
         return rodasVendidasCount;
 
     } catch (error) {
-        console.error('[VendasService] Erro fatal durante a contagem de rodas vendidas:', error);
+        logger.error({ err: error }, 'erro fatal na contagem de rodas vendidas');
         return 0; 
     }
 }
