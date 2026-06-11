@@ -4,6 +4,7 @@ const { QueryTypes } = require('sequelize');
 require('dotenv').config();
 const anunciosService = require('../services/anuncios.service');
 const stockService = require('../services/stock.service');
+const failuresService = require('../services/failures.service');
 
 const DEBUG_SKU = 'M17ARO174-1004-108HD';
 let _debugTrace = [];
@@ -523,12 +524,12 @@ const updateEstoqueAnuncio = async (detalhesAnuncio, access_token, updatePayload
 
         if (isValidationError && respostaJson.cause?.some(c => c.cause_id === 201)) {
              logger.warn({ mlItemId }, 'ML API 400: validacao de imagem falhou, pulando anuncio');
-             return { status: 400, message: 'Image validation bypassed.' };
+             return { status: 400, message: 'Image validation bypassed.', respostaML: respostaJson, payloadEnviado: payload };
         }
 
         if (statusCode === 409) {
             logger.warn({ mlId: detalhesAnuncio[0].ml_id }, 'ML API 409: conflito de concorrencia ignorado');
-            return { status: 409, message: 'Conflict ignored.' }; // Retorna sucesso silencioso
+            return { status: 409, message: 'Conflict ignored.', respostaML: respostaJson, payloadEnviado: payload }; // Retorna sucesso silencioso
         }
 
         if (statusCode === 429 && attempt < MAX_RETRIES) {
@@ -543,7 +544,13 @@ const updateEstoqueAnuncio = async (detalhesAnuncio, access_token, updatePayload
             }
 
         logger.error({ status: resposta.status, body: respostaJson }, 'erro ao atualizar estoque ML');
-        throw new Error(`Falha na atualização do estoque (Status ${resposta.status}).`);
+        // Anexa o contexto completo ao erro para o chamador registrar em falhas_atualizacao_ml
+        const erro = new Error(`Falha na atualização do estoque (Status ${resposta.status}).`);
+        erro.statusHttp = statusCode;
+        erro.respostaML = respostaJson;
+        erro.payloadEnviado = payload;
+        erro.mlItemId = mlItemId;
+        throw erro;
     }
 
     logger.info({ mlItemId }, 'ML API: estoque atualizado com sucesso');
@@ -611,12 +618,32 @@ const processCriticalUpdates = async(mudancasCriticas,access_token) => {
 
                         if (resultado && (resultado.status === 400 || resultado.status === 409)) {
                             relatorio.jaAtualizados.push({ sku: rodaAlterada.sku, ml_id: ML_ID.ml_id });
+                            // O anúncio NAO foi atualizado (validacao de imagem / conflito):
+                            // registra para auditoria mesmo sem abortar o lote.
+                            await failuresService.registrarFalhaML({
+                                origem: 'upload_pdf',
+                                sku: rodaAlterada.sku,
+                                ml_id: ML_ID.ml_id,
+                                statusHttp: resultado.status,
+                                motivo: resultado.message,
+                                respostaML: resultado.respostaML,
+                                payloadEnviado: resultado.payloadEnviado
+                            });
                         } else {
                             relatorio.atualizados.push({ sku: rodaAlterada.sku, ml_id: ML_ID.ml_id });
                         }
                     }
                 } catch (skuError) {
                     relatorio.erros.push({ sku: rodaAlterada.sku, mensagem: skuError.message });
+                    await failuresService.registrarFalhaML({
+                        origem: 'upload_pdf',
+                        sku: rodaAlterada.sku,
+                        ml_id: skuError.mlItemId || null,
+                        statusHttp: skuError.statusHttp || null,
+                        motivo: skuError.message,
+                        respostaML: skuError.respostaML,
+                        payloadEnviado: skuError.payloadEnviado
+                    });
                 }
             }
         }

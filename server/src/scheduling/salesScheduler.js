@@ -4,6 +4,7 @@ const meliService = require('../services/meli.service');
 const vendasService = require('../services/vendas.service');
 const anunciosService = require('../services/anuncios.service');
 const stockService = require('../services/stock.service');
+const failuresService = require('../services/failures.service');
 
 const CROSS_STORE_ID = 2;
 const CROSS_STORE_MAX_RETRIES = 3;
@@ -60,12 +61,29 @@ const runSalesSync = async () => {
                         if (store2RetryQueue[sku] <= 0) {
                             delete store2RetryQueue[sku];
                             logger.warn({ sku }, 'cross-store: SKU esgotou tentativas, desistindo');
+                            await failuresService.registrarFalhaML({
+                                origem: 'cross_store_loja2',
+                                store_id: CROSS_STORE_ID,
+                                sku,
+                                statusHttp: 401,
+                                motivo: 'Loja 2: token invalido apos esgotar tentativas de retry'
+                            });
                         } else {
                             logger.warn({ sku, attemptsLeft: store2RetryQueue[sku] }, 'cross-store: 401 no retry, parando neste tick');
                         }
                     } else {
                         delete store2RetryQueue[sku];
                         logger.warn({ sku }, 'cross-store: erro nao-auth no retry, descartando');
+                        await failuresService.registrarFalhaML({
+                            origem: 'cross_store_loja2',
+                            store_id: CROSS_STORE_ID,
+                            sku,
+                            ml_id: error.mlItemId || null,
+                            statusHttp: error.statusHttp || null,
+                            motivo: error.message,
+                            respostaML: error.respostaML,
+                            payloadEnviado: error.payloadEnviado
+                        });
                     }
                 }
             }
@@ -155,6 +173,15 @@ const runSalesSync = async () => {
                             await meliService.updateEstoqueAnuncio(detalhesAnuncio, access_token, updatePayload, 1)
                         } catch (mlError) {
                             falhasML.push({ sku: anuncio.sku, ml_id: ML_ID.ml_id, erro: mlError.message });
+                            await failuresService.registrarFalhaML({
+                                origem: 'venda',
+                                sku: anuncio.sku,
+                                ml_id: ML_ID.ml_id,
+                                statusHttp: mlError.statusHttp || null,
+                                motivo: mlError.message,
+                                respostaML: mlError.respostaML,
+                                payloadEnviado: mlError.payloadEnviado
+                            });
                         }
 
                     }
@@ -172,8 +199,19 @@ const runSalesSync = async () => {
                                     store2RetryQueue[anuncio.sku] = CROSS_STORE_MAX_RETRIES;
                                 }
                                 logger.warn({ sku: anuncio.sku, maxRetries: CROSS_STORE_MAX_RETRIES }, 'cross-store: 401, enfileirado para retry');
+                            } else {
+                                // non-auth errors: discarded from the retry queue, but registered for audit
+                                await failuresService.registrarFalhaML({
+                                    origem: 'cross_store_loja2',
+                                    store_id: CROSS_STORE_ID,
+                                    sku: anuncio.sku,
+                                    ml_id: error.mlItemId || null,
+                                    statusHttp: error.statusHttp || null,
+                                    motivo: error.message,
+                                    respostaML: error.respostaML,
+                                    payloadEnviado: error.payloadEnviado
+                                });
                             }
-                            // non-auth errors are transient noise; discard immediately
                         }
                     } else if (store2AuthFailedThisTick && !(anuncio.sku in store2RetryQueue)) {
                         store2RetryQueue[anuncio.sku] = CROSS_STORE_MAX_RETRIES;

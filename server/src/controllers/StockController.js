@@ -6,7 +6,9 @@ const stockService = require('../services/stock.service');
 const meliService = require('../services/meli.service');
 const xlsx = require('xlsx');
 
-const LOGS_DIR = path.join(__dirname, '../../logs');
+// Em produção (Railway) aponte LOGS_DIR para um volume montado (ex: /data/logs)
+// para que os relatórios de sincronização sobrevivam aos deploys.
+const LOGS_DIR = process.env.LOGS_DIR || path.join(__dirname, '../../logs');
 if (!fs.existsSync(LOGS_DIR)) fs.mkdirSync(LOGS_DIR, { recursive: true });
 
 

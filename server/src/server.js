@@ -16,6 +16,7 @@ const stockRoutes = require('./routes/stock.routes');
 const anunciosRoutes = require('./routes/anuncios.routes');
 const authRoutes = require('./routes/auth.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
+const falhasRoutes = require('./routes/falhas.routes');
 const { startSalesScheduler } = require('./scheduling/salesScheduler');
 
 // 3. CONFIGURAR MIDDLEWARES
@@ -26,6 +27,7 @@ app.use('/api/stock', stockRoutes);
 app.use('/api/anuncios', anunciosRoutes);
 app.use('/api/login', authRoutes)
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/falhas-ml', falhasRoutes);
 
 // 5. INICIAR APLICAÇÃO: CONEXÃO DB E SERVIDOR
 let server;

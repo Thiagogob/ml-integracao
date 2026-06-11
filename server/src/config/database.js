@@ -152,6 +152,29 @@ const EstoqueTemporario = sequelize.define('EstoqueTemporario', {
 
 
 
+// Anúncios que não conseguimos atualizar no ML (auditoria persistente; ver failures.service)
+const FalhaAtualizacaoML = sequelize.define('FalhaAtualizacaoML', {
+    id: {
+        type: DataTypes.INTEGER,
+        primaryKey: true,
+        autoIncrement: true,
+    },
+    created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
+    origem: { type: DataTypes.TEXT, allowNull: false },       // 'venda' | 'upload_pdf' | 'cross_store_loja2' | ...
+    store_id: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
+    sku: { type: DataTypes.TEXT },
+    ml_id: { type: DataTypes.TEXT },
+    titulo: { type: DataTypes.TEXT },
+    status_http: { type: DataTypes.INTEGER },
+    motivo: { type: DataTypes.TEXT },
+    resposta_ml: { type: DataTypes.TEXT },                    // body retornado pelo ML (JSON)
+    payload_enviado: { type: DataTypes.TEXT },                // payload que enviamos (JSON)
+}, {
+    tableName: 'falhas_atualizacao_ml',
+    timestamps: false
+});
+
+
 // Modelo para a tabela 'tokens_ml'
 const Token = sequelize.define('Token', {
     id: {
@@ -234,6 +257,7 @@ module.exports = {
     Anuncio,
     SyncControl,
     User,
+    FalhaAtualizacaoML,
     syncDb
 };
 
