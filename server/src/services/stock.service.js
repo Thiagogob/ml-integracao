@@ -32,20 +32,24 @@ function parseTxtToWheels(text) {
     // seja capturado como segunda palavra do modelo.
     const pattern = /([A-Z][A-Z0-9\.\-]*(?:\s(?![0-9]+[xX])[A-Z0-9]+)?)\s+([\dXx,\.]+)\s+([\dXx\/-]+)\s+(-?\d{1,3})\s+(.*?)\s+(\d+)\s+(\d+)$/;
 
+    // Caso específico MTB L200: a linha desse modelo vem SEM a coluna OFFSET no PDF
+    // do fornecedor (em todos os formatos). Parseia sem offset e grava offset vazio.
+    const patternMtbSemOffset = /^(MTB(?:\s(?![0-9]+[xX])[A-Z0-9]+)?)\s+([\dXx,\.]+)\s+([\dXx\/-]+)\s+(.*?)\s+(\d+)\s+(\d+)$/;
+
     for (const line of lines) {
         if (!line.trim()) continue;
 
         const match = line.match(pattern);
-        
+
         if (match) {
             const [
-                _, 
-                modelo, 
-                aro, 
-                pcd, 
-                offset, 
-                acabamento, 
-                qtde_sp, 
+                _,
+                modelo,
+                aro,
+                pcd,
+                offset,
+                acabamento,
+                qtde_sp,
                 qtde_sc
             ] = match;
 
@@ -58,9 +62,26 @@ function parseTxtToWheels(text) {
                 QTDE_SP: parseInt(qtde_sp),
                 QTDE_SC: parseInt(qtde_sc)
             });
-        } else {
-            logger.warn({ line }, 'linha ignorada: nao corresponde ao padrao');
+            continue;
         }
+
+        const matchMtb = line.trim().match(patternMtbSemOffset);
+        if (matchMtb) {
+            const [_, modelo, aro, pcd, acabamento, qtde_sp, qtde_sc] = matchMtb;
+            results.push({
+                MODELO: modelo.trim(),
+                ARO: aro.trim(),
+                PCD: pcd.trim(),
+                OFFSET: '',
+                ACABAMENTO: acabamento.trim(),
+                QTDE_SP: parseInt(qtde_sp),
+                QTDE_SC: parseInt(qtde_sc)
+            });
+            logger.info({ line }, 'linha MTB parseada sem coluna offset');
+            continue;
+        }
+
+        logger.warn({ line }, 'linha ignorada: nao corresponde ao padrao');
     }
 
     return results;
