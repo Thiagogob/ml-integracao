@@ -14,6 +14,7 @@ const pushSkuToStore2 = async (sku, tokenStr) => {
     for (const { ml_id } of listaMLIDs) {
         const detalhesAnuncio = await anunciosService.getAnuncioForStore(ml_id, CROSS_STORE_ID);
         const detalhesEstoque = await stockService.getRoda(detalhesAnuncio);
+        if (detalhesEstoque.length === 0) continue; // anuncio sem nenhum SKU de roda: nao gerenciado
         const updatePayload = anunciosService.generateUpdatePayload(detalhesAnuncio, detalhesEstoque);
         await meliService.updateEstoqueAnuncio(detalhesAnuncio, tokenStr, updatePayload, 1);
     }
@@ -142,6 +143,11 @@ const runSalesSync = async () => {
                         const detalhesAnuncio = await anunciosService.getAnuncio(ML_ID.ml_id);
 
                         const detalhesEstoque = await stockService.getRoda(detalhesAnuncio);
+
+                        if (detalhesEstoque.length === 0) {
+                            logger.info({ ml_id: ML_ID.ml_id }, 'anuncio sem nenhum SKU de roda no estoque: ignorando atualizacao');
+                            continue;
+                        }
 
                         const updatePayload = anunciosService.generateUpdatePayload(detalhesAnuncio, detalhesEstoque)
 

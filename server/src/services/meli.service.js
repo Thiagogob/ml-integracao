@@ -586,6 +586,11 @@ const processCriticalUpdates = async(mudancasCriticas,access_token) => {
 
                         if (isDebugML) dbgML(ML_ID.ml_id, '3-ESTOQUE', { detalhesEstoque });
 
+                        if (detalhesEstoque.length === 0) {
+                            logger.info({ ml_id: ML_ID.ml_id, sku: rodaAlterada.sku }, 'anuncio sem nenhum SKU de roda no estoque: ignorando atualizacao');
+                            continue;
+                        }
+
                         const updatePayload = anunciosService.generateUpdatePayload(detalhesAnuncio, detalhesEstoque)
 
                         if (isDebugML) dbgML(ML_ID.ml_id, '4-PAYLOAD', { updatePayload });

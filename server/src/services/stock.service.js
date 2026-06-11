@@ -1319,12 +1319,20 @@ const getRoda = async (detalhesAnuncio) => {
         let skuRodas = [];
         let quantidadesDisponiveis = [];
 
+        // A loja vende outros produtos além de rodas (parafusos, porcas etc.) que este
+        // sistema NÃO gerencia. Um anúncio só é considerado "nosso" se PELO MENOS UM
+        // dos SKUs das variações existir no estoque de rodas. Caso contrário retornamos
+        // [] e o chamador ignora o anúncio — sem isso, uma venda de parafuso zerava a
+        // variação do anúncio do parafuso.
+        let algumaCorrespondencia = false;
+        const skusSemCorrespondencia = [];
+
         for(const detalheAnuncio of detalhesAnuncio){
-        
+
             skuRodas.push(detalheAnuncio.sku)
-        
+
         }
-        
+
 
         for(const skuRoda of skuRodas){
 
@@ -1332,6 +1340,7 @@ const getRoda = async (detalhesAnuncio) => {
             // Available sets = floor(min(stock_aro6, stock_aro7) / 2).
             // We return 2*min so that generateUpdatePayload's floor(bruta/4) = floor(min/2).
             if (COMBO_SKU_MAP[skuRoda]) {
+                algumaCorrespondencia = true;
                 const [sku1, sku2] = COMBO_SKU_MAP[skuRoda];
                 const [r1, r2] = await Promise.all([
                     Estoque.findOne({ where: { sku: sku1 }, raw: true }),
@@ -1353,6 +1362,7 @@ const getRoda = async (detalhesAnuncio) => {
             })
 
             if(roda){
+                algumaCorrespondencia = true;
 
                 // --- CÁLCULO DE QUANTIDADE TOTAL CONDICIONAL ---
                 if (useFullStock) {
@@ -1369,8 +1379,9 @@ const getRoda = async (detalhesAnuncio) => {
                 }
             } else {
                 // SKU not found in stock (e.g. discontinued variation) — set to 0 and
-                // keep processing the remaining variations instead of aborting the listing
-                logger.warn({ sku: skuRoda }, 'SKU sem correspondencia no estoque: zerando variacao e continuando');
+                // keep processing the remaining variations instead of aborting the listing.
+                // The warn is deferred: it only makes sense if the listing turns out to be a wheel.
+                skusSemCorrespondencia.push(skuRoda);
                 quantidadesDisponiveis.push({ sku: skuRoda, quantidade: 0 });
                 continue;
             }
@@ -1382,6 +1393,14 @@ const getRoda = async (detalhesAnuncio) => {
             });
         }
 
+        if (!algumaCorrespondencia) {
+            logger.info({ skus: skuRodas }, 'nenhum SKU do anuncio existe no estoque de rodas (produto nao gerenciado, ex: parafusos/porcas): ignorando anuncio');
+            return [];
+        }
+
+        skusSemCorrespondencia.forEach(sku =>
+            logger.warn({ sku }, 'SKU sem correspondencia no estoque: zerando variacao e continuando')
+        );
 
         return quantidadesDisponiveis;
     }catch(error){
