@@ -27,9 +27,10 @@ function parseTxtToWheels(text) {
     const lines = text.trim().split('\n');
     const results = [];
 
-    // Suporta modelos de uma ou duas palavras (ex: ALFA ROMEO, FUCHS 911, POLO GTI).
-    // O lookahead (?![0-9]+[xX]) impede que o ARO (17X7) seja capturado como segunda palavra do modelo.
-    const pattern = /([A-Z][A-Z0-9\-]*(?:\s(?![0-9]+[xX])[A-Z0-9]+)?)\s+([\dXx,\.]+)\s+([\dXx\/-]+)\s+(-?\d{1,3})\s+(.*?)\s+(\d+)\s+(\d+)$/;
+    // Suporta modelos de uma ou duas palavras (ex: ALFA ROMEO, FUCHS 911, POLO GTI)
+    // e modelos com ponto (M50.). O lookahead (?![0-9]+[xX]) impede que o ARO (17X7)
+    // seja capturado como segunda palavra do modelo.
+    const pattern = /([A-Z][A-Z0-9\.\-]*(?:\s(?![0-9]+[xX])[A-Z0-9]+)?)\s+([\dXx,\.]+)\s+([\dXx\/-]+)\s+(-?\d{1,3})\s+(.*?)\s+(\d+)\s+(\d+)$/;
 
     for (const line of lines) {
         if (!line.trim()) continue;
@@ -241,6 +242,7 @@ const fixModelName = (modelName) => {
             return 'ballina';
 
         case 'silver':
+        case 'silverad':
         case 'silverado':
             return 'silvera';
 
@@ -263,6 +265,7 @@ const fixModelName = (modelName) => {
         case 'alfa romeo':
             return 'alfa';
 
+        case 'centaur':
         case 'centauro':
             return 'centau';
 
@@ -308,6 +311,14 @@ const fixAcabamento = (acabamento) => {
 const normalizeString = (str) => {
     if (str === null || str === undefined) return '';
     return String(str).trim().toLowerCase();
+};
+
+// Código da cor: trecho antes do '(' sem espaços (ex: 'bd (preto diamantado)' -> 'bd',
+// 'gd(grafite d.)fl*' -> 'gd'). Usado para impedir que uma roda herde SKU de outra cor.
+const colorCode = (acabamento) => {
+    const a = normalizeString(acabamento);
+    const idx = a.indexOf('(');
+    return (idx === -1 ? a : a.slice(0, idx)).replace(/\s+/g, '');
 };
 
 
@@ -754,6 +765,16 @@ const saveStock = async (estoque, access_token, processCriticalUpdates) => {
         // usando LIKE constrangido por (modelo, aro, pcd, offset), que é sempre unívoco.
         const truncados = registrosLimpos.filter(r => r.acabamento.includes('(') && !r.acabamento.includes(')'));
 
+        // DETECÇÃO DE FORMATO DO PDF: no formato antigo (colunas largas) só uma pequena
+        // fração dos acabamentos chega truncada (~2-3%); no formato novo (colunas estreitas,
+        // usado entre abr-jun/2026) mais da metade chega truncada. Se o fornecedor voltar ao
+        // formato novo, este aviso aparece — a correção abaixo continua funcionando nos dois
+        // formatos, mas o relatório da sincronização merece revisão manual.
+        const formatoNovoDetectado = registrosLimpos.length > 0 && (truncados.length / registrosLimpos.length) > 0.2;
+        if (formatoNovoDetectado) {
+            logger.warn({ truncados: truncados.length, total: registrosLimpos.length }, 'ATENCAO: PDF parece estar no formato NOVO (colunas estreitas) - revisar relatorio da sincronizacao');
+        }
+
         for (const registro of truncados) {
             const exato = await Estoque.findOne({
                 attributes: ['acabamento', 'sku'],
@@ -929,9 +950,11 @@ const saveStock = async (estoque, access_token, processCriticalUpdates) => {
             } else {
                 // Sem match por prefixo: vai ser inserido como nova linha.
                 // Antes de inserir com sku='', verifica se existe uma linha com mesmo
-                // modelo/aro/pcd/offset (qualquer acabamento) que tenha SKU definido.
+                // modelo/aro/pcd/offset E MESMA COR que tenha SKU definido.
                 // Se sim, herda o SKU para não perder a associação manual.
-                const rodaComSkuOrfao = await Estoque.findOne({
+                // A cor é obrigatória: sem essa trava uma roda GRAFITE podia herdar o
+                // SKU da PRETO e empurrar quantidade errada para o anúncio errado.
+                const rodasComSkuOrfao = await Estoque.findAll({
                     attributes: ['acabamento', 'sku'],
                     where: {
                         modelo: registro.modelo,
@@ -944,9 +967,12 @@ const saveStock = async (estoque, access_token, processCriticalUpdates) => {
                     raw: true
                 });
 
-                if (rodaComSkuOrfao) {
-                    registro.sku = rodaComSkuOrfao.sku;
-                    logger.warn({ modelo: registro.modelo, acabamento: registro.acabamento, skuHerdado: rodaComSkuOrfao.sku, acabamentoOrigem: rodaComSkuOrfao.acabamento }, 'SKU herdado de linha orfa');
+                const mesmaCor = rodasComSkuOrfao.filter(r => colorCode(r.acabamento) === colorCode(registro.acabamento));
+                if (mesmaCor.length > 0) {
+                    registro.sku = mesmaCor[0].sku;
+                    logger.warn({ modelo: registro.modelo, acabamento: registro.acabamento, skuHerdado: mesmaCor[0].sku, acabamentoOrigem: mesmaCor[0].acabamento }, 'SKU herdado de linha orfa (mesma cor)');
+                } else if (rodasComSkuOrfao.length > 0) {
+                    logger.warn({ modelo: registro.modelo, acabamento: registro.acabamento, candidatos: rodasComSkuOrfao.map(r => `${r.acabamento} [${r.sku}]`) }, 'linha orfa com SKU existe mas de cor diferente: inserindo sem SKU');
                 }
             }
         }
@@ -1040,6 +1066,7 @@ const saveStock = async (estoque, access_token, processCriticalUpdates) => {
 
         return {
             timestamp: new Date().toISOString(),
+            formatoNovoDetectado,
             resumo: {
                 totalRodasNoPDF: registrosLimpos.length,
                 atualizadasComSKU: comSku.length,
