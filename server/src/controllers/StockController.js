@@ -137,12 +137,16 @@ exports.uploadLocalStockController = async (req, res) => {
         const data = xlsx.utils.sheet_to_json(sheet);
 
         // 3. Processa e salva no banco
-        await stockService.saveLocalStock(data);
+        const resultado = await stockService.saveLocalStock(data);
 
-        return res.json({ message: "Estoque local processado e integrado com sucesso!" });
+        return res.json({
+            message: "Estoque local processado e integrado com sucesso!",
+            skusAtualizados: resultado.skusAtualizados,
+            skusIgnorados: resultado.skusIgnorados
+        });
 
     } catch (err) {
         logger.error({ err }, 'erro ao processar planilha local');
-        return res.status(500).json({ error: 'Falha ao processar o arquivo Excel.' });
+        return res.status(500).json({ error: 'Falha ao processar o arquivo Excel.', detalhe: err.message });
     }
 };

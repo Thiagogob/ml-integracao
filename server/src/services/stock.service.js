@@ -1945,8 +1945,13 @@ const saveLocalStock = async (dadosPlanilha) => {
         await Estoque.update({ qtde_local: 0 }, { where: {}, transaction });
 
         for (const item of dadosPlanilha) {
-            // Normaliza o SKU para bater com o padrão do banco (trim e lowercase)
-            const skuOriginal = item.SKU;
+            // O cabeçalho da coluna A já foi "SKU"; a planilha atual usa "Fs"
+            const skuOriginal = (item.SKU ?? item.Fs ?? '').toString().trim();
+
+            // A linha "MODELO" abre uma segunda tabela na planilha (códigos internos);
+            // dali em diante não há estoque de rodas
+            if (skuOriginal.toUpperCase() === 'MODELO') break;
+
             const skuNormalizado = skuOriginal;
             const quantidade = parseInt(item.QUANTIDADE) || 0;
 
@@ -1969,13 +1974,21 @@ const saveLocalStock = async (dadosPlanilha) => {
             }
         }
 
+        // Se nada casou, o layout da planilha provavelmente mudou de novo —
+        // aborta para não zerar o estoque local inteiro por engano
+        if (skusAtualizados === 0) {
+            throw new Error('Nenhum SKU da planilha encontrado no banco; estoque local não foi alterado (o cabeçalho/layout da planilha mudou?)');
+        }
+
         await transaction.commit();
 
         logger.info({ skusAtualizados, skusIgnorados: skusNaoEncontrados.length }, 'estoque local atualizado');
         if (skusNaoEncontrados.length > 0) {
             logger.warn({ skus: skusNaoEncontrados }, 'SKUs da planilha nao encontrados no banco');
         }
-        
+
+        return { skusAtualizados, skusIgnorados: skusNaoEncontrados };
+
     } catch (error) {
         if (transaction) await transaction.rollback();
         logger.error({ err: error }, 'erro fatal ao salvar estoque local');
