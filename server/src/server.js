@@ -18,6 +18,7 @@ const authRoutes = require('./routes/auth.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
 const falhasRoutes = require('./routes/falhas.routes');
 const { startSalesScheduler } = require('./scheduling/salesScheduler');
+const { startAnunciosScheduler } = require('./scheduling/anunciosScheduler');
 
 // 3. CONFIGURAR MIDDLEWARES
 app.use(express.json()); 
@@ -40,6 +41,7 @@ const startServer = async () => {
         server = app.listen(PORT, () => {
             logger.info({ port: PORT }, 'servidor iniciado');
             startSalesScheduler();
+            startAnunciosScheduler();
         });
 
     } catch (error) {

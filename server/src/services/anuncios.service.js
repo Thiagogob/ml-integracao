@@ -16,8 +16,11 @@ const salvarAnuncios = async (anuncios) => {
             return tituloNormalizado.startsWith('1 U') || tituloNormalizado.startsWith('1 R');
     };
 
+    // destroy + insert numa única transação: quem lê a tabela durante a sincronização
+    // (ex: observador de vendas) continua vendo os anúncios antigos até o commit
+    const transaction = await sequelize.transaction();
     try {
-        await Anuncio.destroy({ where: { store_id: STORE_ID } })
+        await Anuncio.destroy({ where: { store_id: STORE_ID }, transaction })
 
         let skusSalvos = 0;
         let registrosParaInserir = [];
@@ -44,10 +47,12 @@ const salvarAnuncios = async (anuncios) => {
         }
     }
         if (registrosParaInserir.length > 0) {
-            await Anuncio.bulkCreate(registrosParaInserir);
+            await Anuncio.bulkCreate(registrosParaInserir, { transaction });
         }
+        await transaction.commit();
         logger.info({ skusSalvos }, 'anuncios salvos na tabela anuncios');
     } catch (error) {
+        await transaction.rollback();
         logger.error({ err: error }, 'erro ao salvar anuncios');
         throw error; // Lança o erro para o controller
     }
