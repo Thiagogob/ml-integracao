@@ -136,35 +136,30 @@ const authTest = async () => {
 
 
 
+// Janela móvel de busca de vendas. Buscamos por data de ATUALIZAÇÃO (não de criação) para
+// pegar também pedidos criados num dia e pagos em outro; o que é "novo" é decidido em
+// syncVendas pelo id_venda ainda não salvo. A janela de 48h cobre atrasos de indexação
+// do ML e eventuais horas com o servidor fora do ar.
+const JANELA_VENDAS_HORAS = 48;
+
 const getVendas = async (access_token) => {
-    
+
     let todasAsVendas = [];
     let offset = 0;
-    let limit=50;
-    
-    // Configura o início e o fim do dia
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
+    const limit = 50;
 
-    const endOfToday = new Date();
-    endOfToday.setHours(23, 59, 59, 999);
-
-    const formattedStart = startOfToday.toISOString();
-    const formattedEnd = endOfToday.toISOString();
+    const desde = new Date(Date.now() - JANELA_VENDAS_HORAS * 60 * 60 * 1000).toISOString();
 
     const headers = {
         "Authorization": `Bearer ${access_token}`
     };
 
-    let totalVendasApi = 0;
-
     // Loop principal para a paginação
     while (true) {
-        
-        // Constrói a URL com os parâmetros de paginação
-        const url = `https://api.mercadolibre.com/orders/search?seller=${SELLER_ID}&order.date_created.from=${formattedStart}&order.date_created.to=${formattedEnd}&offset=${offset}&limit=${limit}`;
-        
-   
+
+        // Só pedidos pagos: cancelados não podem dar baixa no estoque, e pedidos ainda não
+        // pagos voltam a aparecer na janela (date_last_updated muda) quando forem pagos
+        const url = `https://api.mercadolibre.com/orders/search?seller=${SELLER_ID}&order.status=paid&order.date_last_updated.from=${desde}&sort=date_asc&offset=${offset}&limit=${limit}`;
 
         try {
             const resposta = await fetch(url, {
@@ -178,27 +173,13 @@ const getVendas = async (access_token) => {
             }
 
             const resposta_json = await resposta.json();
+            const vendasDaPagina = resposta_json.results || [];
 
+            todasAsVendas = todasAsVendas.concat(vendasDaPagina);
+            offset += limit;
 
-            const vendasDaPagina = resposta_json.results;
-            
-            // Define o total de vendas na primeira iteração
-            if (offset === 0) {
-                totalVendasApi = resposta_json.paging.total;
-            }
-
-            // Adiciona as vendas da página atual ao array principal
-            if (vendasDaPagina && vendasDaPagina.length > 0) {
-                todasAsVendas = todasAsVendas.concat(vendasDaPagina);
-                offset += limit;
-            }
-            
-
-            // Se o total de vendas coletadas for igual ou maior que o total da API, sai do loop
-            if (todasAsVendas.length >= totalVendasApi) {
-                //console.log("PARADA: Condição de parada atingida. Saindo do loop.");
+            if (vendasDaPagina.length === 0 || offset >= resposta_json.paging.total) {
                 break;
-                
             }
 
         } catch (error) {
@@ -208,8 +189,14 @@ const getVendas = async (access_token) => {
         }
     }
 
+    // Pedidos antigos também mudam de date_last_updated (envio, entrega, reclamação):
+    // só interessam os fechados (pagos) dentro da janela, para não reprocessar venda antiga
+    const vendasFechadasNaJanela = todasAsVendas.filter(venda =>
+        venda.date_closed && new Date(venda.date_closed) >= new Date(desde)
+    );
+
     // Retorna o objeto com todas as vendas para a rota
-    return { results: todasAsVendas };
+    return { results: vendasFechadasNaJanela };
 };
 
 

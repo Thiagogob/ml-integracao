@@ -106,6 +106,19 @@ const runSalesSync = async () => {
             //baseado no ML_ID da venda, pegamos infos importantes do anúncio em que houve venda
             detalhesAnuncioQueVendeu = await anunciosService.getAnuncio(anuncio.ml_id);
 
+            // Anúncio ainda não sincronizado na tabela anuncios: sem isso, o acesso a [0].sku
+            // lançava erro e abortava a rodada inteira, deixando as demais vendas sem processar
+            if (detalhesAnuncioQueVendeu.length === 0) {
+                logger.warn({ ml_id: anuncio.ml_id, sku: anuncio.sku, id_venda: anuncio.id_venda }, 'venda de anuncio ausente na tabela anuncios: nao processada');
+                await failuresService.registrarFalhaML({
+                    origem: 'venda',
+                    sku: anuncio.sku,
+                    ml_id: anuncio.ml_id,
+                    motivo: `Venda ${anuncio.id_venda}: anuncio ausente na tabela anuncios (sem baixa de estoque)`
+                });
+                continue;
+            }
+
             //Essa função pega as infos da roda dentro do estoque da distribuidora. Baseado nas infos do anuncio que capturamos anteriormente
             if(!SKUs_DUAS_TALAS.includes(detalhesAnuncioQueVendeu[0].sku)){
 
