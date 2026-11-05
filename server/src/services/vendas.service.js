@@ -369,48 +369,44 @@ try {
  * @returns {Promise<Array<string>>} Array de SKUs únicos vendidos a serem processados.
  */
 const syncVendas = async (accessToken) => {
-    
-    // 1. OBTENÇÃO DO CHECKPOINT
-    const lastSyncDateISO = await syncControlService.getCheckpoint();
-    const lastSyncDate = lastSyncDateISO ? new Date(lastSyncDateISO) : null;
 
-    // 2. BUSCA TODAS AS VENDAS DE HOJE (via meliService)
-    const vendasDoDia = await meliService.getVendas(accessToken);
-    
-    let vendasNovas = vendasDoDia.results;
+    // 1. BUSCA AS VENDAS PAGAS ATUALIZADAS NA JANELA RECENTE (via meliService)
+    const resultados = (await meliService.getVendas(accessToken)).results;
 
-    if (lastSyncDate) {
-        // 3. FILTRAGEM: Mantém apenas as vendas com data posterior ao checkpoint
-        vendasNovas = vendasNovas.filter(venda => {
-            const vendaClosedDate = new Date(venda.date_closed);
-            // Compara a data de fechamento da venda com a data do último checkpoint
-            return vendaClosedDate > lastSyncDate;
-        });
+    // A paginação por offset pode devolver o mesmo pedido em duas páginas se a lista mudar
+    // durante a busca; sem deduplicar, a venda daria baixa duas vezes
+    const vendasRecentes = [...new Map(resultados.map(venda => [String(venda.id), venda])).values()];
+
+    if (vendasRecentes.length === 0) {
+        return [];
     }
 
-    //if (vendasNovas.length === 0) {
-    //    return [];
-    //}
-    //
-    //await salvarVendas(vendasNovas);
+    // 2. FILTRAGEM: novas são as que ainda não estão no banco. Não usamos mais o checkpoint
+    // de data para isso: pedidos que aparecem na API com atraso (ou pagos dias depois de
+    // criados) ficavam com data anterior ao checkpoint e eram descartados para sempre.
+    const idsRecentes = vendasRecentes.map(venda => String(venda.id));
+    const jaSalvas = await Venda.findAll({
+        attributes: ['id_venda'],
+        where: { id_venda: { [Op.in]: idsRecentes } },
+        raw: true
+    });
+    const idsJaSalvos = new Set(jaSalvas.map(venda => venda.id_venda));
 
-
-
-    
+    const vendasNovas = vendasRecentes.filter(venda => !idsJaSalvos.has(String(venda.id)));
 
     if (vendasNovas.length === 0) {
         return [];
     }
 
-    // 4. SALVAMENTO NO DB
+    // 3. SALVAMENTO NO DB
     await salvarVendas(vendasNovas);
 
+    // O checkpoint não filtra mais nada; fica só como registro da última venda processada
     const vendaMaisRecente = vendasNovas.reduce((latest, current) => {
         const latestDate = new Date(latest.date_closed);
         const currentDate = new Date(current.date_closed);
         return currentDate > latestDate ? current : latest;
     }, vendasNovas[0]);
-
 
     await syncControlService.updateCheckpoint(vendaMaisRecente.date_closed);
 
