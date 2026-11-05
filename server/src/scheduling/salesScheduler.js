@@ -21,7 +21,16 @@ const pushSkuToStore2 = async (sku, tokenStr) => {
     }
 };
 
+// Trava contra rodadas sobrepostas: o cron dispara a cada 10 min mesmo que a rodada anterior
+// ainda esteja rodando, e duas rodadas simultâneas dariam baixa dupla da mesma venda
+let emExecucao = false;
+
 const runSalesSync = async () => {
+    if (emExecucao) {
+        logger.warn('observador: rodada anterior ainda em andamento, ignorando disparo');
+        return;
+    }
+    emExecucao = true;
     logger.info('observador: iniciando verificacao de vendas');
     let access_token;
     const SKUs_DUAS_TALAS = [
@@ -102,142 +111,160 @@ const runSalesSync = async () => {
         const falhasML = [];
 
         for(const anuncio of skusEAnuncios){
+            // Cada venda é isolada: um erro aqui não pode abortar a rodada, senão as vendas
+            // seguintes (já gravadas em vendas_ml) nunca mais seriam processadas
+            try {
 
-            //baseado no ML_ID da venda, pegamos infos importantes do anúncio em que houve venda
-            detalhesAnuncioQueVendeu = await anunciosService.getAnuncio(anuncio.ml_id);
+                //baseado no ML_ID da venda, pegamos infos importantes do anúncio em que houve venda
+                detalhesAnuncioQueVendeu = await anunciosService.getAnuncio(anuncio.ml_id);
 
-            // Anúncio ainda não sincronizado na tabela anuncios: sem isso, o acesso a [0].sku
-            // lançava erro e abortava a rodada inteira, deixando as demais vendas sem processar
-            if (detalhesAnuncioQueVendeu.length === 0) {
-                logger.warn({ ml_id: anuncio.ml_id, sku: anuncio.sku, id_venda: anuncio.id_venda }, 'venda de anuncio ausente na tabela anuncios: nao processada');
-                await failuresService.registrarFalhaML({
-                    origem: 'venda',
-                    sku: anuncio.sku,
-                    ml_id: anuncio.ml_id,
-                    motivo: `Venda ${anuncio.id_venda}: anuncio ausente na tabela anuncios (sem baixa de estoque)`
-                });
-                continue;
-            }
+                // Anúncio ainda não sincronizado na tabela anuncios: sem isso, o acesso a [0].sku
+                // lançava erro e abortava a rodada inteira, deixando as demais vendas sem processar
+                if (detalhesAnuncioQueVendeu.length === 0) {
+                    logger.warn({ ml_id: anuncio.ml_id, sku: anuncio.sku, id_venda: anuncio.id_venda }, 'venda de anuncio ausente na tabela anuncios: nao processada');
+                    await failuresService.registrarFalhaML({
+                        origem: 'venda',
+                        sku: anuncio.sku,
+                        ml_id: anuncio.ml_id,
+                        motivo: `Venda ${anuncio.id_venda}: anuncio ausente na tabela anuncios (sem baixa de estoque)`
+                    });
+                    continue;
+                }
 
-            //Essa função pega as infos da roda dentro do estoque da distribuidora. Baseado nas infos do anuncio que capturamos anteriormente
-            if(!SKUs_DUAS_TALAS.includes(detalhesAnuncioQueVendeu[0].sku)){
+                //Essa função pega as infos da roda dentro do estoque da distribuidora. Baseado nas infos do anuncio que capturamos anteriormente
+                if(!SKUs_DUAS_TALAS.includes(detalhesAnuncioQueVendeu[0].sku)){
 
-                detalhesRodaQueVendeu = await stockService.getRoda(detalhesAnuncioQueVendeu);
+                    detalhesRodaQueVendeu = await stockService.getRoda(detalhesAnuncioQueVendeu);
 
-            } else {
+                } else {
 
-                detalhesRodaQueVendeu = await stockService.getRodaDeVendaDuasTalas(detalhesAnuncioQueVendeu);
+                    detalhesRodaQueVendeu = await stockService.getRodaDeVendaDuasTalas(detalhesAnuncioQueVendeu);
 
-            }
+                }
 
-            //Essa condição garante que estamos lidando com uma
-            //venda que tem um SKU correspondente no estoque da distribuidora
-            if(detalhesRodaQueVendeu.length > 0){
-
-
-
-                if(!anuncio.isUnitario){
+                //Essa condição garante que estamos lidando com uma
+                //venda que tem um SKU correspondente no estoque da distribuidora
+                if(detalhesRodaQueVendeu.length > 0){
 
 
-                    await vendasService.preencherDisponibilidade(anuncio.id_venda, anuncio.sku, 4)
-                    //Primeiro Atualizar a quantidade disponível no estoque interno da distribuidora
-                    if(!SKUs_DUAS_TALAS.includes(anuncio.sku)){
-                        await stockService.subtrairRodasDoEstoque(anuncio.sku, anuncio.quantidade * 4);
+
+                    // isUnitario vem da tabela anuncios: o objeto da venda não traz esse campo, e com
+                    // ele undefined toda venda de unidade dava baixa de 4 rodas
+                    if(!detalhesAnuncioQueVendeu[0].isUnitario){
+
+
+                        await vendasService.preencherDisponibilidade(anuncio.id_venda, anuncio.sku, 4)
+                        //Primeiro Atualizar a quantidade disponível no estoque interno da distribuidora
+                        if(!SKUs_DUAS_TALAS.includes(anuncio.sku)){
+                            await stockService.subtrairRodasDoEstoque(anuncio.sku, anuncio.quantidade * 4);
+                        }
+                        else{
+                            await stockService.subtrairRodasDeUmAnuncioDuasTalas(anuncio.sku, anuncio.quantidade * 4)
+                        }
+                        logger.info({ sku: anuncio.sku, tipo: 'jogo', quantidade: anuncio.quantidade }, 'venda processada');
+
                     }
                     else{
-                        await stockService.subtrairRodasDeUmAnuncioDuasTalas(anuncio.sku, anuncio.quantidade * 4)
-                    }
-                    logger.info({ sku: anuncio.sku, tipo: 'jogo', quantidade: anuncio.quantidade }, 'venda processada');
-
-                }
-                else{
 
 
-                    await vendasService.preencherDisponibilidade(anuncio.id_venda, anuncio.sku, 1)
+                        await vendasService.preencherDisponibilidade(anuncio.id_venda, anuncio.sku, 1)
 
-                    await stockService.subtrairRodasDoEstoque(anuncio.sku, anuncio.quantidade);
+                        await stockService.subtrairRodasDoEstoque(anuncio.sku, anuncio.quantidade);
 
-                    logger.info({ sku: anuncio.sku, tipo: 'unidade', quantidade: anuncio.quantidade }, 'venda processada');
-
-                }
-
-                    //Agora começar o processo para atualizar a quantidade em estoque nos anúncios
-
-                    //Primeiro capturar todos os anúncios que tem aquele respectivo SKU
-                    listaMLIDs = await anunciosService.getAnunciosBySku(anuncio.sku);
-
-
-                    //E esse loop aqui é pra fazer a atualização em massa do estoque disponível já que não estamos
-                    //fragmentando o estoque para cada anúncio. Todos os anúncios da mesma roda tem o mesmo estoque
-                    for(const ML_ID of listaMLIDs){
-
-                        const detalhesAnuncio = await anunciosService.getAnuncio(ML_ID.ml_id);
-
-                        const detalhesEstoque = await stockService.getRoda(detalhesAnuncio);
-
-                        if (detalhesEstoque.length === 0) {
-                            logger.info({ ml_id: ML_ID.ml_id }, 'anuncio sem nenhum SKU de roda no estoque: ignorando atualizacao');
-                            continue;
-                        }
-
-                        const updatePayload = anunciosService.generateUpdatePayload(detalhesAnuncio, detalhesEstoque)
-
-                        try {
-                            await meliService.updateEstoqueAnuncio(detalhesAnuncio, access_token, updatePayload, 1)
-                        } catch (mlError) {
-                            falhasML.push({ sku: anuncio.sku, ml_id: ML_ID.ml_id, erro: mlError.message });
-                            await failuresService.registrarFalhaML({
-                                origem: 'venda',
-                                sku: anuncio.sku,
-                                ml_id: ML_ID.ml_id,
-                                statusHttp: mlError.statusHttp || null,
-                                motivo: mlError.message,
-                                respostaML: mlError.respostaML,
-                                payloadEnviado: mlError.payloadEnviado
-                            });
-                        }
+                        logger.info({ sku: anuncio.sku, tipo: 'unidade', quantidade: anuncio.quantidade }, 'venda processada');
 
                     }
 
-                    // Push updated quantity to store 2's ML listings
-                    if (store2TokenThisTick && !store2AuthFailedThisTick) {
-                        try {
-                            await pushSkuToStore2(anuncio.sku, store2TokenThisTick);
-                            logger.info({ sku: anuncio.sku }, 'cross-store: loja 2 atualizada');
-                        } catch (error) {
-                            if (/Status 401/.test(error.message)) {
-                                store2TokenThisTick = null;
-                                store2AuthFailedThisTick = true;
-                                if (!(anuncio.sku in store2RetryQueue)) {
-                                    store2RetryQueue[anuncio.sku] = CROSS_STORE_MAX_RETRIES;
-                                }
-                                logger.warn({ sku: anuncio.sku, maxRetries: CROSS_STORE_MAX_RETRIES }, 'cross-store: 401, enfileirado para retry');
-                            } else {
-                                // non-auth errors: discarded from the retry queue, but registered for audit
+                        //Agora começar o processo para atualizar a quantidade em estoque nos anúncios
+
+                        //Primeiro capturar todos os anúncios que tem aquele respectivo SKU
+                        listaMLIDs = await anunciosService.getAnunciosBySku(anuncio.sku);
+
+
+                        //E esse loop aqui é pra fazer a atualização em massa do estoque disponível já que não estamos
+                        //fragmentando o estoque para cada anúncio. Todos os anúncios da mesma roda tem o mesmo estoque
+                        for(const ML_ID of listaMLIDs){
+
+                            const detalhesAnuncio = await anunciosService.getAnuncio(ML_ID.ml_id);
+
+                            const detalhesEstoque = await stockService.getRoda(detalhesAnuncio);
+
+                            if (detalhesEstoque.length === 0) {
+                                logger.info({ ml_id: ML_ID.ml_id }, 'anuncio sem nenhum SKU de roda no estoque: ignorando atualizacao');
+                                continue;
+                            }
+
+                            const updatePayload = anunciosService.generateUpdatePayload(detalhesAnuncio, detalhesEstoque)
+
+                            try {
+                                await meliService.updateEstoqueAnuncio(detalhesAnuncio, access_token, updatePayload, 1)
+                            } catch (mlError) {
+                                falhasML.push({ sku: anuncio.sku, ml_id: ML_ID.ml_id, erro: mlError.message });
                                 await failuresService.registrarFalhaML({
-                                    origem: 'cross_store_loja2',
-                                    store_id: CROSS_STORE_ID,
+                                    origem: 'venda',
                                     sku: anuncio.sku,
-                                    ml_id: error.mlItemId || null,
-                                    statusHttp: error.statusHttp || null,
-                                    motivo: error.message,
-                                    respostaML: error.respostaML,
-                                    payloadEnviado: error.payloadEnviado
+                                    ml_id: ML_ID.ml_id,
+                                    statusHttp: mlError.statusHttp || null,
+                                    motivo: mlError.message,
+                                    respostaML: mlError.respostaML,
+                                    payloadEnviado: mlError.payloadEnviado
                                 });
                             }
+
                         }
-                    } else if (store2AuthFailedThisTick && !(anuncio.sku in store2RetryQueue)) {
-                        store2RetryQueue[anuncio.sku] = CROSS_STORE_MAX_RETRIES;
-                        logger.warn({ sku: anuncio.sku }, 'cross-store: auth falhou neste tick, enfileirado para retry');
-                    }
 
-            }else{
+                        // Push updated quantity to store 2's ML listings
+                        if (store2TokenThisTick && !store2AuthFailedThisTick) {
+                            try {
+                                await pushSkuToStore2(anuncio.sku, store2TokenThisTick);
+                                logger.info({ sku: anuncio.sku }, 'cross-store: loja 2 atualizada');
+                            } catch (error) {
+                                if (/Status 401/.test(error.message)) {
+                                    store2TokenThisTick = null;
+                                    store2AuthFailedThisTick = true;
+                                    if (!(anuncio.sku in store2RetryQueue)) {
+                                        store2RetryQueue[anuncio.sku] = CROSS_STORE_MAX_RETRIES;
+                                    }
+                                    logger.warn({ sku: anuncio.sku, maxRetries: CROSS_STORE_MAX_RETRIES }, 'cross-store: 401, enfileirado para retry');
+                                } else {
+                                    // non-auth errors: discarded from the retry queue, but registered for audit
+                                    await failuresService.registrarFalhaML({
+                                        origem: 'cross_store_loja2',
+                                        store_id: CROSS_STORE_ID,
+                                        sku: anuncio.sku,
+                                        ml_id: error.mlItemId || null,
+                                        statusHttp: error.statusHttp || null,
+                                        motivo: error.message,
+                                        respostaML: error.respostaML,
+                                        payloadEnviado: error.payloadEnviado
+                                    });
+                                }
+                            }
+                        } else if (store2AuthFailedThisTick && !(anuncio.sku in store2RetryQueue)) {
+                            store2RetryQueue[anuncio.sku] = CROSS_STORE_MAX_RETRIES;
+                            logger.warn({ sku: anuncio.sku }, 'cross-store: auth falhou neste tick, enfileirado para retry');
+                        }
 
-                logger.info({ sku: anuncio.sku }, 'SKU nao e roda, ignorando');
+                }else{
+
+                    logger.info({ sku: anuncio.sku }, 'SKU nao e roda, ignorando');
 
 
+                }
+                //console.log(detalhesAnuncioQueVendeu);
+            } catch (error) {
+                logger.error({ err: error, sku: anuncio.sku, ml_id: anuncio.ml_id, id_venda: anuncio.id_venda }, 'observador: erro ao processar venda');
+                try {
+                    await failuresService.registrarFalhaML({
+                        origem: 'venda',
+                        sku: anuncio.sku,
+                        ml_id: anuncio.ml_id,
+                        motivo: `Venda ${anuncio.id_venda}: erro no processamento (${error.message})`
+                    });
+                } catch (registroError) {
+                    logger.error({ err: registroError }, 'observador: falha ao registrar erro da venda');
+                }
             }
-            //console.log(detalhesAnuncioQueVendeu);
         }
 
         if (falhasML.length > 0) {
@@ -248,6 +275,8 @@ const runSalesSync = async () => {
 
     } catch (error) {
         logger.error({ err: error }, 'observador: erro fatal na sincronizacao de vendas/estoque');
+    } finally {
+        emExecucao = false;
     }
 };
 

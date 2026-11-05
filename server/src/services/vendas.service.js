@@ -371,7 +371,11 @@ try {
 const syncVendas = async (accessToken) => {
 
     // 1. BUSCA AS VENDAS PAGAS ATUALIZADAS NA JANELA RECENTE (via meliService)
-    const vendasRecentes = (await meliService.getVendas(accessToken)).results;
+    const resultados = (await meliService.getVendas(accessToken)).results;
+
+    // A paginação por offset pode devolver o mesmo pedido em duas páginas se a lista mudar
+    // durante a busca; sem deduplicar, a venda daria baixa duas vezes
+    const vendasRecentes = [...new Map(resultados.map(venda => [String(venda.id), venda])).values()];
 
     if (vendasRecentes.length === 0) {
         return [];
