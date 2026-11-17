@@ -167,21 +167,21 @@ export const buscarEventos = async (
 };
 
 export const confirmarImportacao = async (id: number): Promise<Importacao> => {
-    const resposta = await api.post(`/importacoes/${id}/confirmar`, null, {
+    const resposta = await api.post(`/importacoes/${id}/confirmar`, {}, {
         timeout: TIMEOUT_CONSULTA_MS
     });
     return resposta.data.importacao;
 };
 
 export const retomarImportacao = async (id: number): Promise<Importacao> => {
-    const resposta = await api.post(`/importacoes/${id}/retomar`, null, {
+    const resposta = await api.post(`/importacoes/${id}/retomar`, {}, {
         timeout: TIMEOUT_CONSULTA_MS
     });
     return resposta.data.importacao;
 };
 
 export const cancelarImportacao = async (id: number): Promise<Importacao> => {
-    const resposta = await api.post(`/importacoes/${id}/cancelar`, null, {
+    const resposta = await api.post(`/importacoes/${id}/cancelar`, {}, {
         timeout: TIMEOUT_CONSULTA_MS
     });
     return resposta.data.importacao;
