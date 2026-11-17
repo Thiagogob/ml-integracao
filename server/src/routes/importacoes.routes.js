@@ -16,10 +16,10 @@ const path = require('path');
 const authMiddleware = require('../middlewares/authMiddleware');
 const ImportacoesController = require('../controllers/ImportacoesController');
 
-// Os relatorios reais medem algumas centenas de KB. 25 MB e folga larga e ao
-// mesmo tempo impede que um envio acidental consuma o disco do contêiner, coisa
-// que o multer sem limite permite.
-const LIMITE_BYTES = 25 * 1024 * 1024;
+// Ha relatorios reais de ~30 MB. 100 MB da folga e ao mesmo tempo impede que
+// um envio acidental consuma o disco do contêiner, coisa que o multer sem
+// limite permite.
+const LIMITE_BYTES = 100 * 1024 * 1024;
 
 const EXTENSOES_ACEITAS = new Set(['.pdf']);
 

@@ -315,7 +315,7 @@ const ImportacaoEstoquePage: React.FC = () => {
                         ) : (
                             <>
                                 <span className="text-heading text-ink-900">Arraste o PDF do relatório aqui, ou clique para escolher</span>
-                                <span className="text-body text-ink-400">Somente PDF, até 25 MB</span>
+                                <span className="text-body text-ink-400">Somente PDF, até 100 MB</span>
                             </>
                         )}
                     </div>
