@@ -549,6 +549,105 @@ const getStoredToken = async (storeId) => {
     return record ? record.access_token : null;
 };
 
+// Quantidade enviada no payload, so para registro no evento da importacao.
+// Anuncio simples: a propria quantidade. Anuncio com variacoes: a soma delas.
+const quantidadeDoPayload = (payload) => {
+    if (!payload) return null;
+    if (Array.isArray(payload)) {
+        return payload.reduce((soma, v) => soma + (parseInt(v.available_quantity, 10) || 0), 0);
+    }
+    if (typeof payload.available_quantity === 'number') return payload.available_quantity;
+    return null;
+};
+
+/**
+ * Sincroniza UM anuncio com o estoque atual.
+ *
+ * Extraida do laco interno de processCriticalUpdates sem alteracao de
+ * comportamento, para que a importacao acompanhada (importacoes.service.js)
+ * possa percorrer anuncio por anuncio e gravar um evento em cada um.
+ *
+ * Nao captura excecao de proposito: quem chama escolhe a granularidade do erro.
+ * processCriticalUpdates mantem o catch por SKU que sempre teve, no qual uma
+ * falha abandona os anuncios restantes daquele SKU; a importacao acompanhada
+ * captura por anuncio e segue para o proximo.
+ *
+ * @returns {{resultado: 'atualizado'|'ja_atualizado'|'ignorado',
+ *            status_http?: number, quantidade_nova?: number,
+ *            motivo?: string, duracao_ms: number}}
+ */
+const sincronizarAnuncio = async ({ sku, ml_id, access_token, origem = 'upload_pdf' }) => {
+    const inicio = Date.now();
+    const isDebugML = DEBUG_ML_IDS.has(ml_id);
+
+    if (isDebugML) dbgML(ml_id, '1-ENCONTRADO', { sku });
+
+    const detalhesAnuncio = await anunciosService.getAnuncio(ml_id);
+
+    if (isDebugML) dbgML(ml_id, '2-DETALHES', { detalhesAnuncio });
+
+    const detalhesEstoque = await stockService.getRoda(detalhesAnuncio);
+
+    if (isDebugML) dbgML(ml_id, '3-ESTOQUE', { detalhesEstoque });
+
+    if (detalhesEstoque.length === 0) {
+        logger.info({ ml_id, sku }, 'anuncio sem nenhum SKU de roda no estoque: ignorando atualizacao');
+        return {
+            resultado: 'ignorado',
+            motivo: 'anuncio sem nenhum SKU de roda no estoque',
+            duracao_ms: Date.now() - inicio
+        };
+    }
+
+    const updatePayload = anunciosService.generateUpdatePayload(detalhesAnuncio, detalhesEstoque);
+
+    if (isDebugML) dbgML(ml_id, '4-PAYLOAD', { updatePayload });
+
+    if (sku === DEBUG_SKU) {
+        dbg(`[6-PAYLOAD] ml_id=${ml_id} payload=${JSON.stringify(updatePayload)}`);
+    }
+
+    await delay(DELAY_MS);
+
+    const resultado = await updateEstoqueAnuncio(detalhesAnuncio, access_token, updatePayload);
+
+    if (isDebugML) dbgML(ml_id, '5-RESULTADO', { status: resultado?.status ?? 'ok', resultado });
+
+    if (sku === DEBUG_SKU) {
+        dbg(`[6-RESULT] ml_id=${ml_id} status=${resultado?.status ?? 'ok'}`);
+    }
+
+    const quantidade_nova = quantidadeDoPayload(updatePayload);
+
+    if (resultado && (resultado.status === 400 || resultado.status === 409)) {
+        // O anuncio NAO foi atualizado (validacao de imagem / conflito):
+        // registra para auditoria mesmo sem abortar o lote.
+        await failuresService.registrarFalhaML({
+            origem,
+            sku,
+            ml_id,
+            statusHttp: resultado.status,
+            motivo: resultado.message,
+            respostaML: resultado.respostaML,
+            payloadEnviado: resultado.payloadEnviado
+        });
+        return {
+            resultado: 'ja_atualizado',
+            status_http: resultado.status,
+            motivo: resultado.message,
+            quantidade_nova,
+            duracao_ms: Date.now() - inicio
+        };
+    }
+
+    return {
+        resultado: 'atualizado',
+        status_http: 200,
+        quantidade_nova,
+        duracao_ms: Date.now() - inicio
+    };
+};
+
 const processCriticalUpdates = async(mudancasCriticas,access_token) => {
     _debugTrace = [];
     const relatorio = { atualizados: [], jaAtualizados: [], erros: [] };
@@ -558,7 +657,9 @@ const processCriticalUpdates = async(mudancasCriticas,access_token) => {
             if(!(rodaAlterada.sku==='')){
 
                 try {
-                    listaMLIDs = await anunciosService.getAnunciosBySku(rodaAlterada.sku);
+                    // antes era atribuicao sem declaracao, o que criava uma
+                    // global implicita a cada SKU
+                    const listaMLIDs = await anunciosService.getAnunciosBySku(rodaAlterada.sku);
 
                     // Check if any of our watched ML IDs were returned for this SKU
                     const debugHit = listaMLIDs.some(m => DEBUG_ML_IDS.has(m.ml_id));
@@ -568,54 +669,19 @@ const processCriticalUpdates = async(mudancasCriticas,access_token) => {
 
                     for(const ML_ID of listaMLIDs){
 
-                        const isDebugML = DEBUG_ML_IDS.has(ML_ID.ml_id);
+                        const desfecho = await sincronizarAnuncio({
+                            sku: rodaAlterada.sku,
+                            ml_id: ML_ID.ml_id,
+                            access_token,
+                            origem: 'upload_pdf'
+                        });
 
-                        if (isDebugML) dbgML(ML_ID.ml_id, '1-ENCONTRADO', { sku: rodaAlterada.sku });
+                        // anuncio sem SKU de roda no estoque: nao entra em
+                        // nenhuma das listas, como antes
+                        if (desfecho.resultado === 'ignorado') continue;
 
-                        const detalhesAnuncio = await anunciosService.getAnuncio(ML_ID.ml_id);
-
-                        if (isDebugML) dbgML(ML_ID.ml_id, '2-DETALHES', { detalhesAnuncio });
-
-                        const detalhesEstoque = await stockService.getRoda(detalhesAnuncio);
-
-                        if (isDebugML) dbgML(ML_ID.ml_id, '3-ESTOQUE', { detalhesEstoque });
-
-                        if (detalhesEstoque.length === 0) {
-                            logger.info({ ml_id: ML_ID.ml_id, sku: rodaAlterada.sku }, 'anuncio sem nenhum SKU de roda no estoque: ignorando atualizacao');
-                            continue;
-                        }
-
-                        const updatePayload = anunciosService.generateUpdatePayload(detalhesAnuncio, detalhesEstoque)
-
-                        if (isDebugML) dbgML(ML_ID.ml_id, '4-PAYLOAD', { updatePayload });
-
-                        if (rodaAlterada.sku === DEBUG_SKU) {
-                            dbg(`[6-PAYLOAD] ml_id=${ML_ID.ml_id} payload=${JSON.stringify(updatePayload)}`);
-                        }
-
-                        await delay(DELAY_MS);
-
-                        const resultado = await updateEstoqueAnuncio(detalhesAnuncio, access_token, updatePayload)
-
-                        if (isDebugML) dbgML(ML_ID.ml_id, '5-RESULTADO', { status: resultado?.status ?? 'ok', resultado });
-
-                        if (rodaAlterada.sku === DEBUG_SKU) {
-                            dbg(`[6-RESULT] ml_id=${ML_ID.ml_id} status=${resultado?.status ?? 'ok'}`);
-                        }
-
-                        if (resultado && (resultado.status === 400 || resultado.status === 409)) {
+                        if (desfecho.resultado === 'ja_atualizado') {
                             relatorio.jaAtualizados.push({ sku: rodaAlterada.sku, ml_id: ML_ID.ml_id });
-                            // O anúncio NAO foi atualizado (validacao de imagem / conflito):
-                            // registra para auditoria mesmo sem abortar o lote.
-                            await failuresService.registrarFalhaML({
-                                origem: 'upload_pdf',
-                                sku: rodaAlterada.sku,
-                                ml_id: ML_ID.ml_id,
-                                statusHttp: resultado.status,
-                                motivo: resultado.message,
-                                respostaML: resultado.respostaML,
-                                payloadEnviado: resultado.payloadEnviado
-                            });
                         } else {
                             relatorio.atualizados.push({ sku: rodaAlterada.sku, ml_id: ML_ID.ml_id });
                         }
@@ -652,6 +718,9 @@ module.exports = {
   getDetalhesAnuncios,
   updateEstoqueAnuncio,
   processCriticalUpdates,
+  sincronizarAnuncio,
+  quantidadeDoPayload,
   getStoredToken,
-  delay
+  delay,
+  DELAY_MS
 };

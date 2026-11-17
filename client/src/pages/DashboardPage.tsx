@@ -70,6 +70,13 @@ const DashboardPage: React.FC = () => {
         navigate('/vendas'); 
     };
 
+    // Este botao existia no cabecalho rotulado "Enviar estoque atualizado",
+    // mas o onClick era handleListarVendas e levava para /vendas. A tela
+    // prometia a funcao e fazia outra coisa.
+    const handleImportarEstoque = () => {
+        navigate('/importar-estoque');
+    };
+
 const top5AtencaoFiltrado = useMemo(() => {
         if (!data || !data.top5Atencao) return [];
         
@@ -102,7 +109,7 @@ const top5AtencaoFiltrado = useMemo(() => {
                 <h1 className="text-4xl font-bold text-white-400">Visão Geral</h1>
                 <div className="flex space-x-4"> 
                     <button
-                        onClick={handleListarVendas}
+                        onClick={handleImportarEstoque}
                         className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 rounded-lg text-sm font-semibold transition"
                     >
                         Enviar estoque atualizado
