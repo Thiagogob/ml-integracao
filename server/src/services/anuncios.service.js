@@ -3,6 +3,7 @@ const fs = require('fs').promises;
 const logger = require('../config/logger');
 const path = require('path');
 const { Anuncio, sequelize } = require('../config/database');
+const { Op } = require('sequelize');
 const STORE_ID = parseInt(process.env.STORE_ID, 10);
 
 const salvarAnuncios = async (anuncios) => {
@@ -124,6 +125,52 @@ const getAnunciosBySku = async (sku) => {
 }
 
 
+/**
+ * Expande uma lista de SKUs nos pares (sku, ml_id) que serao tocados.
+ *
+ * Existe para que a importacao acompanhada saiba o TOTAL de anuncios antes de
+ * comecar, e possa mostrar barra de progresso e estimativa de termino reais em
+ * lugar de adivinhadas. Uma consulta so, em lugar de uma por SKU.
+ *
+ * Reproduz deliberadamente a semantica de getAnunciosBySku, que devolve uma
+ * entrada por LINHA da tabela anuncios, e percorre os SKUs na ordem recebida.
+ * Sem isso a contagem e a ordem divergiriam do caminho legado, e o teste de
+ * regressao contra os relatorios de abril nao fecharia.
+ *
+ * @param {string[]} skus
+ * @param {number} [storeId]
+ * @returns {Promise<Array<{sku: string, ml_id: string, titulo: string|null}>>}
+ */
+const expandirAnunciosPorSkus = async (skus, storeId = STORE_ID) => {
+    const unicos = [...new Set((skus || []).filter(Boolean))];
+    if (unicos.length === 0) return [];
+
+    const linhas = await Anuncio.findAll({
+        where: { sku: { [Op.in]: unicos }, store_id: storeId },
+        attributes: ['sku', 'ml_id', 'titulo'],
+        raw: true
+    });
+
+    // agrupa por SKU para preservar a ordem de iteracao do caminho legado
+    const porSku = new Map();
+    for (const linha of linhas) {
+        if (!porSku.has(linha.sku)) porSku.set(linha.sku, []);
+        porSku.get(linha.sku).push({
+            sku: linha.sku,
+            ml_id: linha.ml_id,
+            titulo: linha.titulo || null
+        });
+    }
+
+    const plano = [];
+    for (const sku of unicos) {
+        const doSku = porSku.get(sku);
+        if (doSku) plano.push(...doSku);
+    }
+    return plano;
+};
+
+
 const getAnunciosBySkuForStore = async (sku, storeId) => {
     try {
         const arrayAnuncios = await Anuncio.findAll({
@@ -214,5 +261,6 @@ module.exports = {
     generateUpdatePayload,
     getAnunciosBySku,
     getAnunciosBySkuForStore,
-    getAnuncioForStore
+    getAnuncioForStore,
+    expandirAnunciosPorSkus
 };
