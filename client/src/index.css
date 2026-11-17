@@ -1,5 +1,63 @@
-/* 1. Importa os estilos principais do Bootstrap */
 @import "tailwindcss";
 
+/*
+ * Tokens do redesenho (arquivo Penpot, pagina "Telas").
+ * Cores da biblioteca local, tipografias e raios usados nos boards.
+ */
+@theme {
+  --color-ink-900: #0f172a;
+  --color-ink-600: #475569;
+  --color-ink-400: #94a3b8;
 
-/* Opcional: Estilos globais */
+  --color-surface-page: #f4f6f9;
+  --color-surface-card: #ffffff;
+  --color-surface-sunken: #f8fafc;
+  --color-line: #e2e8f0;
+
+  --color-nav-bg: #0f172a;
+  --color-nav-active: #1e293b;
+  --color-nav-text: #cbd5e1;
+
+  --color-brand: #2563eb;
+  --color-brand-strong: #1d4ed8;
+  --color-brand-soft: #dbeafe;
+  --color-row-selected: #eff6ff;
+
+  --color-success: #15803d;
+  --color-success-soft: #dcfce7;
+  --color-warning: #b45309;
+  --color-warning-soft: #fef3c7;
+  --color-danger: #b91c1c;
+  --color-danger-soft: #fee2e2;
+  --color-neutral: #475569;
+  --color-neutral-soft: #e5e9f0;
+
+  --font-sans: "Inter Tight", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --text-display: 28px;
+  --text-display--line-height: 1.2;
+  --text-kpi: 32px;
+  --text-kpi--line-height: 1.2;
+  --text-heading: 18px;
+  --text-heading--line-height: 1.2;
+  --text-body: 14px;
+  --text-body--line-height: 1.2;
+  --text-label: 12px;
+  --text-label--line-height: 1.2;
+  --text-code: 13px;
+  --text-code--line-height: 1.2;
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+
+  --shadow-card: 0 1px 3px 0 rgb(15 23 42 / 0.06);
+}
+
+body {
+  background-color: var(--color-surface-page);
+  color: var(--color-ink-900);
+  font-family: var(--font-sans);
+}
