@@ -11,17 +11,24 @@
 // A conferencia e o passo que justifica a tela. Antes dela nada e gravado e
 // nenhum anuncio e tocado; e a ultima chance de perceber que o arquivo esta
 // errado antes de ~980 chamadas ao Mercado Livre.
+//
+// Visual conforme os boards "Tela / Importacao - Conferencia" e
+// "Tela / Importacao - Acompanhamento" do arquivo Penpot, pagina "Telas".
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
+import AppLayout from '../components/ui/AppLayout';
+import PageHeader from '../components/ui/PageHeader';
+import Card from '../components/ui/Card';
+import Button from '../components/ui/Button';
+import Badge, { type BadgeTone } from '../components/ui/Badge';
 import {
     enviarRelatorio, obterImportacao, listarImportacoes, buscarEventos,
     confirmarImportacao, retomarImportacao, cancelarImportacao,
     ConflitoDeArquivo, ESTADOS_TERMINAIS,
-    rotuloDoEstado, corDoEstado, rotuloDoResultado, corDoResultado,
-    formatarDuracao, formatarInstante,
-    type Importacao, type EventoImportacao, type ResultadoEvento
+    rotuloDoEstado, rotuloDoResultado, formatarDuracao, formatarInstante,
+    type Importacao, type EventoImportacao, type ResultadoEvento, type EstadoImportacao
 } from '../services/importacoesService';
 
 // Intervalo de consulta. Dois segundos acompanha de perto sem pesar: com 500 ms
@@ -39,12 +46,44 @@ const FILTROS: Array<{ valor: ResultadoEvento | 'todos'; rotulo: string }> = [
     { valor: 'ignorado', rotulo: 'Ignorados' }
 ];
 
-const Contador: React.FC<{ rotulo: string; valor: number | string; cor?: string; dica?: string }> =
-({ rotulo, valor, cor = 'text-white', dica }) => (
-    <div className="bg-gray-800 border border-gray-700 rounded-lg p-4" title={dica}>
-        <p className="text-xs uppercase tracking-wide text-gray-400">{rotulo}</p>
-        <p className={`text-2xl font-bold mt-1 ${cor}`}>{valor}</p>
-    </div>
+/**
+ * Junta o que chegou com o que a tela ja tinha, do ordinal maior para o menor e
+ * sem repetir. Desduplicar e necessario porque dois efeitos consultam na
+ * montagem, o do filtro e o do acompanhamento, e ambos partem do ordinal zero.
+ */
+const juntarEventos = (anteriores: EventoImportacao[], novos: EventoImportacao[]): EventoImportacao[] => {
+    const porSeq = new Map<number, EventoImportacao>();
+    for (const e of anteriores) porSeq.set(e.seq, e);
+    for (const e of novos) porSeq.set(e.seq, e);
+    return [...porSeq.values()].sort((a, b) => b.seq - a.seq).slice(0, EVENTOS_NA_TELA);
+};
+
+const TOM_DO_ESTADO: Record<EstadoImportacao, BadgeTone> = {
+    analisando: 'info',
+    aguardando_confirmacao: 'warning',
+    processando: 'info',
+    concluida: 'success',
+    falhou: 'danger',
+    cancelada: 'neutral',
+    interrompida: 'warning'
+};
+
+const TOM_DO_RESULTADO: Record<ResultadoEvento, BadgeTone> = {
+    atualizado: 'success',
+    ja_atualizado: 'warning',
+    erro: 'danger',
+    ignorado: 'neutral'
+};
+
+// Bloco numerico do diagnostico e dos contadores
+const Numero: React.FC<{
+    rotulo: string; valor: React.ReactNode; nota: string; cor?: string; titulo?: string;
+}> = ({ rotulo, valor, nota, cor = 'text-ink-900', titulo }) => (
+    <Card className="flex min-w-0 flex-1 flex-col gap-1.5 px-[18px] py-5">
+        <span className="text-label font-semibold uppercase text-ink-600" title={titulo}>{rotulo}</span>
+        <span className={`text-kpi font-bold ${cor}`}>{valor}</span>
+        <span className="text-label text-ink-400">{nota}</span>
+    </Card>
 );
 
 const ImportacaoEstoquePage: React.FC = () => {
@@ -68,6 +107,7 @@ const ImportacaoEstoquePage: React.FC = () => {
     const seletor = useRef<HTMLInputElement | null>(null);
 
     const emVoo = atual ? (atual.estado === 'processando' || atual.estado === 'analisando') : false;
+    const naEscolha = !atual || ESTADOS_TERMINAIS.includes(atual.estado);
 
     // ------------------------------------------------------------- historico
 
@@ -79,16 +119,12 @@ const ImportacaoEstoquePage: React.FC = () => {
         }
     }, []);
 
-    useEffect(() => {
-        recarregarHistorico();
-    }, [recarregarHistorico]);
+    useEffect(() => { recarregarHistorico(); }, [recarregarHistorico]);
 
     // Se houver importacao em voo ou esperando confirmacao, a tela assume: o
     // operador pode ter fechado o navegador no meio.
     useEffect(() => {
-        const pendente = historico.find(
-            (i) => !ESTADOS_TERMINAIS.includes(i.estado)
-        );
+        const pendente = historico.find((i) => !ESTADOS_TERMINAIS.includes(i.estado));
         if (pendente && !atual) {
             setAtual(pendente);
             maiorSeq.current = 0;
@@ -115,24 +151,18 @@ const ImportacaoEstoquePage: React.FC = () => {
 
                 // busca incremental: so o que chegou depois do ultimo ordinal
                 const pagina = await buscarEventos(
-                    id,
-                    maiorSeq.current,
+                    id, maiorSeq.current,
                     filtro === 'todos' ? undefined : filtro,
-                    200,
-                    abortar.current.signal
+                    200, abortar.current.signal
                 );
                 if (!vivo) return;
 
                 if (pagina.eventos.length > 0) {
-                    maiorSeq.current = pagina.maior_seq;
-                    setEventos((anteriores) =>
-                        [...pagina.eventos.reverse(), ...anteriores].slice(0, EVENTOS_NA_TELA)
-                    );
+                    maiorSeq.current = Math.max(maiorSeq.current, pagina.maior_seq);
+                    setEventos((anteriores) => juntarEventos(anteriores, pagina.eventos));
                 }
 
-                if (ESTADOS_TERMINAIS.includes(estado.estado)) {
-                    recarregarHistorico();
-                }
+                if (ESTADOS_TERMINAIS.includes(estado.estado)) recarregarHistorico();
             } catch (erro: any) {
                 if (erro?.name === 'CanceledError' || erro?.code === 'ERR_CANCELED') return;
                 // Falha de rede nao derruba o acompanhamento: o intervalo
@@ -144,7 +174,6 @@ const ImportacaoEstoquePage: React.FC = () => {
 
         consultar();
         const temporizador = setInterval(consultar, INTERVALO_CONSULTA_MS);
-
         return () => {
             vivo = false;
             clearInterval(temporizador);
@@ -160,7 +189,7 @@ const ImportacaoEstoquePage: React.FC = () => {
         buscarEventos(atual.id, 0, filtro === 'todos' ? undefined : filtro, 200)
             .then((pagina) => {
                 maiorSeq.current = pagina.maior_seq;
-                setEventos(pagina.eventos.reverse().slice(0, EVENTOS_NA_TELA));
+                setEventos(juntarEventos([], pagina.eventos));
             })
             .catch(() => {});
     }, [filtro, atual?.id]);
@@ -196,23 +225,18 @@ const ImportacaoEstoquePage: React.FC = () => {
                 toast.warn('Este mesmo arquivo já tem uma importação. Abri ela para você.');
                 recarregarHistorico();
             } else {
-                const detalhe = erro?.response?.data?.error || erro?.message;
-                toast.error(`Falha no envio: ${detalhe}`);
+                toast.error(`Falha no envio: ${erro?.response?.data?.error || erro?.message}`);
             }
         } finally {
             setEnviando(false);
         }
     };
 
-    const executarAcao = async (
-        acao: (id: number) => Promise<Importacao>,
-        mensagem: string
-    ) => {
+    const executarAcao = async (acao: (id: number) => Promise<Importacao>, mensagem: string) => {
         if (!atual) return;
         setAgindo(true);
         try {
-            const atualizada = await acao(atual.id);
-            setAtual(atualizada);
+            setAtual(await acao(atual.id));
             toast.success(mensagem);
             recarregarHistorico();
         } catch (erro: any) {
@@ -236,50 +260,44 @@ const ImportacaoEstoquePage: React.FC = () => {
 
     // ---------------------------------------------------------------- derivados
 
-    const eventosVisiveis = useMemo(() => eventos, [eventos]);
-
     const alerta = useMemo(() => {
-        if (!atual || !atual.resumo) return null;
+        if (!atual?.resumo) return null;
         const r = atual.resumo;
-        const semCadastro = r.semSKUNoBanco;
         const proporcao = r.totalRodasNoPDF > 0
-            ? Math.round((semCadastro / r.totalRodasNoPDF) * 100)
-            : 0;
-        if (proporcao >= 40) {
-            return `${semCadastro} das ${r.totalRodasNoPDF} linhas do relatório (${proporcao}%) não têm SKU no cadastro e não chegam a nenhum anúncio.`;
-        }
-        return null;
+            ? Math.round((r.semSKUNoBanco / r.totalRodasNoPDF) * 100) : 0;
+        if (proporcao < 40) return null;
+        return `${r.semSKUNoBanco.toLocaleString('pt-BR')} das ${r.totalRodasNoPDF.toLocaleString('pt-BR')} linhas do relatório (${proporcao}%) não têm SKU no cadastro e não chegam a nenhum anúncio.`;
     }, [atual]);
+
+    const acoesDoCabecalho = (
+        <Button type="button" variant="secondary" onClick={() => navigate('/dashboard')}>
+            ← Voltar
+        </Button>
+    );
 
     // ------------------------------------------------------------------ render
 
     return (
-        <div className="min-h-screen bg-gray-900 text-white p-8">
-            <header className="flex justify-between items-center mb-8 border-b border-gray-700 pb-4">
-                <div>
-                    <h1 className="text-3xl font-bold text-indigo-400">Importar relatório de estoque</h1>
-                    <p className="text-sm text-gray-400 mt-1">
-                        O arquivo é conferido antes de qualquer alteração. Nada é gravado sem a sua autorização.
-                    </p>
-                </div>
-                <button
-                    onClick={() => navigate('/dashboard')}
-                    className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm font-semibold transition"
-                >
-                    &larr; Voltar
-                </button>
-            </header>
+        <AppLayout>
+            <PageHeader
+                breadcrumb="Estoque"
+                title={atual?.estado === 'processando' ? 'Importando relatório de estoque' : 'Importar relatório de estoque'}
+                subtitle={atual?.estado === 'processando'
+                    ? 'A execução segue no servidor. Você pode fechar esta página e voltar depois.'
+                    : 'O arquivo é conferido antes de qualquer alteração. Nada é gravado sem a sua autorização.'}
+                actions={acoesDoCabecalho}
+            />
 
             {/* ---------------------------------------------------- 1. ENVIO */}
-            {(!atual || ESTADOS_TERMINAIS.includes(atual.estado)) && (
-                <section className="mb-8">
+            {naEscolha && (
+                <div className="flex flex-col gap-4">
                     <div
                         onDragOver={(e) => { e.preventDefault(); setArrastando(true); }}
                         onDragLeave={() => setArrastando(false)}
                         onDrop={(e) => { e.preventDefault(); setArrastando(false); escolher(e.dataTransfer.files); }}
                         onClick={() => seletor.current?.click()}
-                        className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition ${
-                            arrastando ? 'border-indigo-400 bg-gray-800' : 'border-gray-600 hover:border-gray-500'
+                        className={`flex cursor-pointer flex-col items-center gap-1.5 rounded-xl border-2 border-dashed px-10 py-10 text-center transition-colors ${
+                            arrastando ? 'border-brand bg-brand-soft' : 'border-line bg-surface-card'
                         }`}
                     >
                         <input
@@ -290,354 +308,288 @@ const ImportacaoEstoquePage: React.FC = () => {
                             onChange={(e) => escolher(e.target.files)}
                         />
                         {arquivo ? (
-                            <div>
-                                <p className="text-lg font-semibold">{arquivo.name}</p>
-                                <p className="text-sm text-gray-400 mt-1">
-                                    {(arquivo.size / 1024).toFixed(0)} KB
-                                </p>
-                            </div>
+                            <>
+                                <span className="text-heading font-semibold text-ink-900">{arquivo.name}</span>
+                                <span className="text-body text-ink-400">{(arquivo.size / 1024).toFixed(0)} KB</span>
+                            </>
                         ) : (
-                            <div>
-                                <p className="text-lg">Arraste o PDF do relatório aqui, ou clique para escolher</p>
-                                <p className="text-sm text-gray-500 mt-2">Somente PDF, até 25 MB</p>
-                            </div>
+                            <>
+                                <span className="text-heading text-ink-900">Arraste o PDF do relatório aqui, ou clique para escolher</span>
+                                <span className="text-body text-ink-400">Somente PDF, até 25 MB</span>
+                            </>
                         )}
                     </div>
 
                     {arquivo && (
-                        <div className="mt-4 flex items-center gap-3">
-                            <button
-                                onClick={enviar}
-                                disabled={enviando}
-                                className={`px-5 py-2 rounded-lg text-sm font-semibold transition ${
-                                    enviando ? 'bg-gray-600 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'
-                                }`}
-                            >
-                                {enviando
-                                    ? (percentualEnvio < 100
-                                        ? `Enviando ${percentualEnvio}%`
-                                        : 'Analisando o arquivo...')
-                                    : 'Conferir o arquivo'}
-                            </button>
-                            <button
+                        <div className="flex flex-wrap items-center gap-3">
+                            <Button type="button" onClick={enviar} isLoading={enviando && percentualEnvio >= 100} disabled={enviando}>
+                                {enviando && percentualEnvio < 100 ? `Enviando ${percentualEnvio}%` : 'Conferir o arquivo'}
+                            </Button>
+                            <Button
+                                type="button" variant="secondary" disabled={enviando}
                                 onClick={() => { setArquivo(null); if (seletor.current) seletor.current.value = ''; }}
-                                disabled={enviando}
-                                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm transition disabled:opacity-50"
                             >
                                 Trocar
-                            </button>
-                            <span className="text-xs text-gray-500">
+                            </Button>
+                            <span className="text-label text-ink-400">
                                 A conferência não grava nada e não toca em nenhum anúncio.
                             </span>
                         </div>
                     )}
-                </section>
+                </div>
             )}
 
             {/* ------------------------------------- 2. CONFERENCIA E ESTADO */}
             {atual && (
-                <section className="mb-8 bg-gray-800 border border-gray-700 rounded-xl p-6">
-                    <div className="flex flex-wrap items-start justify-between gap-4 mb-5">
-                        <div>
-                            <div className="flex items-center gap-3">
-                                <span className={`px-3 py-1 rounded-full text-xs font-bold ${corDoEstado(atual.estado)}`}>
-                                    {rotuloDoEstado(atual.estado)}
-                                </span>
-                                <span className="text-sm text-gray-400">
-                                    importação #{atual.id}
-                                </span>
+                <Card className="flex flex-col gap-4 p-6">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex min-w-0 flex-col gap-2">
+                            <div className="flex flex-wrap items-center gap-2.5">
+                                <Badge tone={TOM_DO_ESTADO[atual.estado]}>{rotuloDoEstado(atual.estado)}</Badge>
+                                <span className="text-body text-ink-400">importação #{atual.id}</span>
                             </div>
-                            <p className="mt-2 font-semibold">{atual.arquivo_nome}</p>
-                            <p className="text-xs text-gray-500 font-mono mt-1">
-                                sha256 {atual.arquivo_sha256.slice(0, 16)}…
-                            </p>
-                            <p className="text-xs text-gray-400 mt-1">
-                                enviada em {formatarInstante(atual.criada_em)}
+                            <span className="text-heading font-semibold text-ink-900">{atual.arquivo_nome}</span>
+                            <span className="text-label text-ink-400">
+                                <span className="font-mono">sha256 {atual.arquivo_sha256.slice(0, 16)}…</span>
+                                {atual.arquivo_bytes ? `  ·  ${(atual.arquivo_bytes / 1024).toFixed(0)} KB` : ''}
+                                {`  ·  ${formatarInstante(atual.criada_em)}`}
                                 {atual.usuario_nome ? ` por ${atual.usuario_nome}` : ''}
-                            </p>
+                            </span>
                         </div>
 
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex flex-wrap items-center gap-2.5">
                             {atual.estado === 'aguardando_confirmacao' && (
                                 <>
-                                    <button
-                                        onClick={() => executarAcao(confirmarImportacao, 'Importação autorizada.')}
-                                        disabled={agindo}
-                                        className="px-5 py-2 bg-green-600 hover:bg-green-700 rounded-lg text-sm font-semibold transition disabled:opacity-50"
-                                    >
-                                        Autorizar e atualizar {atual.total_anuncios ?? 0} anúncios
-                                    </button>
-                                    <button
-                                        onClick={() => executarAcao(cancelarImportacao, 'Importação descartada.')}
-                                        disabled={agindo}
-                                        className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm transition disabled:opacity-50"
-                                    >
+                                    <Button type="button" variant="secondary" disabled={agindo}
+                                        onClick={() => executarAcao(cancelarImportacao, 'Importação descartada.')}>
                                         Descartar
-                                    </button>
+                                    </Button>
+                                    <Button type="button" variant="success" disabled={agindo}
+                                        onClick={() => executarAcao(confirmarImportacao, 'Importação autorizada.')}>
+                                        Autorizar e atualizar {(atual.total_anuncios ?? 0).toLocaleString('pt-BR')} anúncios
+                                    </Button>
                                 </>
                             )}
                             {atual.estado === 'processando' && (
-                                <button
-                                    onClick={() => executarAcao(cancelarImportacao, 'Cancelamento pedido. O laço para no próximo anúncio.')}
-                                    disabled={agindo || atual.cancelamento_pedido}
-                                    className="px-4 py-2 bg-red-700 hover:bg-red-600 rounded-lg text-sm font-semibold transition disabled:opacity-50"
-                                >
+                                <Button type="button" variant="danger" disabled={agindo || atual.cancelamento_pedido}
+                                    onClick={() => executarAcao(cancelarImportacao, 'Cancelamento pedido. O laço para no próximo anúncio.')}>
                                     {atual.cancelamento_pedido ? 'Parando...' : 'Cancelar'}
-                                </button>
+                                </Button>
                             )}
                             {atual.estado === 'interrompida' && (
-                                <button
-                                    onClick={() => executarAcao(retomarImportacao, 'Retomando de onde parou.')}
-                                    disabled={agindo}
-                                    className="px-5 py-2 bg-orange-600 hover:bg-orange-700 rounded-lg text-sm font-semibold transition disabled:opacity-50"
-                                >
+                                <Button type="button" disabled={agindo}
+                                    onClick={() => executarAcao(retomarImportacao, 'Retomando de onde parou.')}>
                                     Retomar de onde parou
-                                </button>
+                                </Button>
                             )}
                         </div>
                     </div>
 
-                    {/* diagnostico da conferencia */}
-                    {atual.resumo && (
-                        <>
-                            <h2 className="text-sm uppercase tracking-wide text-gray-400 mb-3">
-                                {atual.estado === 'aguardando_confirmacao'
-                                    ? 'O que este arquivo faria'
-                                    : 'O que este arquivo trouxe'}
-                            </h2>
-                            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
-                                <Contador rotulo="Linhas no PDF" valor={atual.resumo.totalRodasNoPDF} />
-                                <Contador
-                                    rotulo="Com cadastro"
-                                    valor={atual.resumo.atualizadasComSKU}
-                                    cor="text-green-400"
-                                    dica="Rodas cujo código existe no cadastro e que podem chegar a anúncios"
-                                />
-                                <Contador
-                                    rotulo="Sem SKU"
-                                    valor={atual.resumo.semSKUNoBanco}
-                                    cor="text-amber-400"
-                                    dica="Linhas do relatório sem SKU no cadastro: não chegam a nenhum anúncio"
-                                />
-                                <Contador
-                                    rotulo="Não encontradas"
-                                    valor={atual.resumo.novasNaoEncontradas}
-                                    cor="text-amber-400"
-                                    dica="Rodas que o relatório traz e o cadastro não conhece"
-                                />
-                                <Contador
-                                    rotulo="Anúncios a tocar"
-                                    valor={atual.total_anuncios ?? '--'}
-                                    cor="text-indigo-300"
-                                    dica="Pares de SKU e anúncio que serão enviados ao Mercado Livre"
-                                />
-                            </div>
-
-                            {alerta && (
-                                <div className="bg-amber-900/40 border border-amber-700 rounded-lg p-3 text-sm mb-4">
-                                    <b>Confira antes de autorizar.</b> {alerta}
-                                </div>
-                            )}
-
-                            {atual.estado === 'aguardando_confirmacao' && atual.total_anuncios ? (
-                                <p className="text-sm text-gray-400 mb-2">
-                                    Ao autorizar, o estoque consolidado é gravado e {atual.total_anuncios} anúncios
-                                    são atualizados um a um, com meio segundo entre cada chamada para respeitar o
-                                    limite do Mercado Livre. Isso leva cerca de{' '}
-                                    <b>{formatarDuracao(Math.round(atual.total_anuncios * 0.9))}</b>. Você pode
-                                    fechar esta página: a execução segue no servidor.
-                                </p>
-                            ) : null}
-                        </>
-                    )}
-
-                    {/* ------------------------------- 3. ACOMPANHAMENTO */}
+                    {/* barra de progresso */}
                     {(atual.estado === 'processando' || atual.processados > 0) && (
-                        <div className="mt-5 pt-5 border-t border-gray-700">
-                            <div className="flex justify-between text-sm mb-2">
-                                <span className="text-gray-300">
-                                    {atual.processados} de {atual.total_anuncios ?? '?'} anúncios
+                        <div className="flex flex-col gap-2.5">
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                                <span className="text-body font-semibold text-ink-900">
+                                    {atual.processados.toLocaleString('pt-BR')} de {(atual.total_anuncios ?? 0).toLocaleString('pt-BR')} anúncios
                                 </span>
-                                <span className="text-gray-400">
+                                <span className="text-label text-ink-400">
                                     {atual.percentual != null ? `${atual.percentual}%` : ''}
-                                    {atual.estado === 'processando' && atual.segundos_restantes != null && (
-                                        <> · faltam cerca de {formatarDuracao(atual.segundos_restantes)}</>
-                                    )}
-                                    {atual.vazao_por_segundo ? ` · ${atual.vazao_por_segundo}/s` : ''}
+                                    {atual.estado === 'processando' && atual.segundos_restantes != null
+                                        ? `  ·  faltam cerca de ${formatarDuracao(atual.segundos_restantes)}` : ''}
+                                    {atual.vazao_por_segundo ? `  ·  ${atual.vazao_por_segundo}/s` : ''}
                                 </span>
                             </div>
-                            <div className="w-full bg-gray-700 rounded-full h-3 overflow-hidden">
+                            <div className="h-2.5 w-full overflow-hidden rounded-full bg-line">
                                 <div
-                                    className={`h-3 rounded-full transition-all duration-500 ${
-                                        atual.estado === 'processando' ? 'bg-indigo-500' :
-                                        atual.estado === 'concluida' ? 'bg-green-500' : 'bg-orange-500'
+                                    className={`h-full rounded-full transition-all duration-500 ${
+                                        atual.estado === 'processando' ? 'bg-brand'
+                                        : atual.estado === 'concluida' ? 'bg-success' : 'bg-warning'
                                     }`}
                                     style={{ width: `${atual.percentual ?? 0}%` }}
                                 />
                             </div>
-
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
-                                <Contador rotulo="Atualizados" valor={atual.atualizados} cor="text-green-400" />
-                                <Contador
-                                    rotulo="Recusados pelo ML"
-                                    valor={atual.ja_atualizados}
-                                    cor="text-amber-400"
-                                    dica="O Mercado Livre respondeu 400 ou 409 e NÃO aplicou a alteração"
-                                />
-                                <Contador rotulo="Com erro" valor={atual.erros} cor="text-red-400" />
-                                <Contador
-                                    rotulo="Ignorados"
-                                    valor={atual.ignorados}
-                                    cor="text-gray-400"
-                                    dica="Anúncio sem nenhum SKU de roda no estoque"
-                                />
-                            </div>
-
-                            {atual.soma_bate === false && (
-                                <div className="bg-red-900/40 border border-red-700 rounded-lg p-3 text-sm mt-3">
-                                    Os contadores desta importação não fecham com o total processado. Isso não
-                                    deveria acontecer: avise o responsável pelo sistema.
-                                </div>
-                            )}
                         </div>
                     )}
 
                     {atual.erro_mensagem && (
-                        <div className="bg-red-900/40 border border-red-700 rounded-lg p-3 text-sm mt-4">
+                        <div className="rounded-md bg-danger-soft px-3.5 py-3 text-body text-danger" role="alert">
                             {atual.erro_mensagem}
                         </div>
                     )}
+
+                    {atual.soma_bate === false && (
+                        <div className="rounded-md bg-danger-soft px-3.5 py-3 text-body text-danger" role="alert">
+                            Os contadores desta importação não fecham com o total processado. Isso não
+                            deveria acontecer: avise o responsável pelo sistema.
+                        </div>
+                    )}
+                </Card>
+            )}
+
+            {/* diagnostico da conferencia */}
+            {atual?.resumo && (
+                <section className="flex flex-col gap-3">
+                    <h2 className="text-label font-semibold uppercase text-ink-600">
+                        {atual.estado === 'aguardando_confirmacao' ? 'O que este arquivo faria' : 'O que este arquivo trouxe'}
+                    </h2>
+                    <div className="flex flex-wrap gap-4">
+                        <Numero rotulo="Linhas no PDF" valor={atual.resumo.totalRodasNoPDF.toLocaleString('pt-BR')} nota="Rodas lidas do relatório" />
+                        <Numero rotulo="Com cadastro" valor={atual.resumo.atualizadasComSKU.toLocaleString('pt-BR')} nota="Chegam a algum anúncio"
+                            cor="text-success" titulo="Rodas cujo código existe no cadastro" />
+                        <Numero rotulo="Sem SKU" valor={atual.resumo.semSKUNoBanco.toLocaleString('pt-BR')} nota="Não chegam a anúncio"
+                            cor="text-warning" titulo="Linhas do relatório sem SKU no cadastro" />
+                        <Numero rotulo="Não cobertas" valor={atual.resumo.comSKUNaoCobertasPeloPDF.toLocaleString('pt-BR')} nota="No cadastro e fora do relatório"
+                            cor="text-warning" />
+                        <Numero rotulo="Anúncios a tocar" valor={atual.total_anuncios != null ? atual.total_anuncios.toLocaleString('pt-BR') : '--'} nota="Envios ao Mercado Livre"
+                            cor="text-brand-strong" />
+                    </div>
+
+                    {alerta && atual.estado === 'aguardando_confirmacao' && (
+                        <div className="flex items-start gap-2.5 rounded-lg border border-warning-soft bg-warning-soft px-4 py-3.5 text-body text-warning">
+                            <span className="font-bold" aria-hidden="true">!</span>
+                            <span><b>Confira antes de autorizar.</b> {alerta}</span>
+                        </div>
+                    )}
+
+                    {atual.estado === 'aguardando_confirmacao' && atual.total_anuncios ? (
+                        <p className="text-label text-ink-400">
+                            Ao autorizar, o estoque consolidado é gravado e {atual.total_anuncios} anúncios são
+                            atualizados um a um, com meio segundo entre cada chamada para respeitar o limite do
+                            Mercado Livre. Isso leva cerca de <b>{formatarDuracao(Math.round(atual.total_anuncios * 0.9))}</b>.
+                            Você pode fechar esta página: a execução segue no servidor.
+                        </p>
+                    ) : null}
                 </section>
             )}
 
-            {/* ------------------------------------------- lista de anuncios */}
-            {atual && (atual.processados > 0 || eventosVisiveis.length > 0) && (
-                <section className="mb-8">
-                    <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-                        <h2 className="text-lg font-semibold">Anúncios</h2>
-                        <div className="flex flex-wrap gap-2">
-                            {FILTROS.map((f) => (
-                                <button
-                                    key={f.valor}
-                                    onClick={() => setFiltro(f.valor)}
-                                    className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${
-                                        filtro === f.valor
-                                            ? 'bg-indigo-600 text-white'
-                                            : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                                    }`}
-                                >
-                                    {f.rotulo}
-                                </button>
-                            ))}
-                        </div>
+            {/* ------------------------------------- 3. CONTADORES E ANUNCIOS */}
+            {atual && atual.processados > 0 && (
+                <>
+                    <div className="flex flex-wrap gap-4">
+                        <Numero rotulo="Atualizados" valor={atual.atualizados.toLocaleString('pt-BR')} nota="Mercado Livre aceitou" cor="text-success" />
+                        <Numero rotulo="Recusados pelo ML" valor={atual.ja_atualizados.toLocaleString('pt-BR')} nota="Respondeu 400 ou 409"
+                            cor="text-warning" titulo="O Mercado Livre NÃO aplicou a alteração" />
+                        <Numero rotulo="Com erro" valor={atual.erros} nota="Falha de rede ou limite" cor="text-danger" />
+                        <Numero rotulo="Ignorados" valor={atual.ignorados} nota="Sem SKU de roda no estoque" cor="text-ink-400" />
                     </div>
 
-                    <div className="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
-                        {eventosVisiveis.length === 0 ? (
-                            <p className="p-6 text-sm text-gray-400">
+                    <Card className="w-full overflow-hidden">
+                        <div className="flex flex-wrap items-center gap-4 px-6 py-4">
+                            <h2 className="text-heading font-semibold text-ink-900">Anúncios</h2>
+                            <div className="flex flex-wrap gap-2">
+                                {FILTROS.map((f) => (
+                                    <button
+                                        key={f.valor}
+                                        type="button"
+                                        onClick={() => setFiltro(f.valor)}
+                                        className={`cursor-pointer rounded-full px-3 py-1.5 text-label font-semibold transition-opacity hover:opacity-90 ${
+                                            filtro === f.valor ? 'bg-brand-strong text-white' : 'bg-surface-sunken text-ink-600'
+                                        }`}
+                                    >
+                                        {f.rotulo}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {eventos.length === 0 ? (
+                            <p className="border-t border-line px-6 py-6 text-body text-ink-400">
                                 {emVoo ? 'Aguardando os primeiros anúncios...' : 'Nenhum anúncio neste filtro.'}
                             </p>
                         ) : (
-                            <ul className="divide-y divide-gray-700 max-h-[28rem] overflow-y-auto">
-                                {eventosVisiveis.map((evento) => (
-                                    <li key={evento.seq} className="px-4 py-3 flex items-start justify-between gap-4">
-                                        <div className="min-w-0">
-                                            <p className="text-sm font-semibold truncate">
-                                                <span className="text-gray-500 font-mono mr-2">
+                            <ul className="max-h-[28rem] overflow-y-auto">
+                                {eventos.map((evento) => (
+                                    <li key={evento.seq} className="flex items-center gap-4 border-t border-line px-6 py-3">
+                                        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                                            <div className="flex flex-wrap items-center gap-2.5">
+                                                <span className="font-mono text-label text-ink-400">
                                                     #{String(evento.seq).padStart(4, '0')}
                                                 </span>
-                                                {evento.sku}
-                                                {evento.ml_id && (
-                                                    <span className="text-gray-400 font-normal ml-2">
-                                                        {evento.ml_id}
-                                                    </span>
-                                                )}
-                                            </p>
-                                            {evento.titulo && (
-                                                <p className="text-xs text-gray-500 truncate mt-0.5">{evento.titulo}</p>
-                                            )}
-                                            {evento.motivo && (
-                                                <p className="text-xs text-gray-400 mt-0.5">{evento.motivo}</p>
+                                                <span className="font-mono text-code font-medium text-ink-900">{evento.sku}</span>
+                                                {evento.ml_id && <span className="font-mono text-label text-ink-600">{evento.ml_id}</span>}
+                                            </div>
+                                            {(evento.motivo || evento.titulo) && (
+                                                <span className="truncate text-label text-ink-400">{evento.motivo || evento.titulo}</span>
                                             )}
                                         </div>
-                                        <div className="text-right whitespace-nowrap">
-                                            <p className={`text-sm font-semibold ${corDoResultado(evento.resultado)}`}>
+                                        <div className="flex shrink-0 items-center gap-3">
+                                            {evento.quantidade_nova != null && (
+                                                <span className="font-mono text-label text-ink-600">qtde {evento.quantidade_nova}</span>
+                                            )}
+                                            {evento.duracao_ms != null && (
+                                                <span className="font-mono text-label text-ink-400">{evento.duracao_ms} ms</span>
+                                            )}
+                                            <Badge tone={TOM_DO_RESULTADO[evento.resultado]}>
                                                 {rotuloDoResultado(evento.resultado)}
                                                 {evento.status_http ? ` · ${evento.status_http}` : ''}
-                                            </p>
-                                            <p className="text-xs text-gray-500 mt-0.5">
-                                                {evento.quantidade_nova != null && (
-                                                    <>qtde {evento.quantidade_nova}</>
-                                                )}
-                                                {evento.duracao_ms != null && (
-                                                    <> · {evento.duracao_ms} ms</>
-                                                )}
-                                            </p>
+                                            </Badge>
                                         </div>
                                     </li>
                                 ))}
                             </ul>
                         )}
-                    </div>
 
-                    {atual.processados > EVENTOS_NA_TELA && (
-                        <p className="text-xs text-gray-500 mt-2">
-                            Mostrando os {EVENTOS_NA_TELA} mais recentes dos {atual.processados} processados.
-                            Use os filtros para achar os que não deram certo.
-                        </p>
-                    )}
-                </section>
+                        {atual.processados > EVENTOS_NA_TELA && (
+                            <div className="border-t border-line bg-surface-sunken px-6 py-3.5">
+                                <span className="text-label text-ink-400">
+                                    Mostrando os {EVENTOS_NA_TELA} mais recentes dos {atual.processados} processados.
+                                    Use os filtros para achar os que não deram certo.
+                                </span>
+                            </div>
+                        )}
+                    </Card>
+                </>
             )}
 
             {/* ----------------------------------------------------- historico */}
-            <section>
-                <h2 className="text-lg font-semibold mb-3">Importações anteriores</h2>
+            <Card className="w-full overflow-hidden">
+                <div className="px-6 py-4">
+                    <h2 className="text-heading font-semibold text-ink-900">Importações anteriores</h2>
+                </div>
                 {historico.length === 0 ? (
-                    <p className="text-sm text-gray-400">Nenhuma importação registrada ainda.</p>
+                    <p className="border-t border-line px-6 py-6 text-body text-ink-400">
+                        Nenhuma importação registrada ainda.
+                    </p>
                 ) : (
-                    <div className="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
-                        <ul className="divide-y divide-gray-700">
-                            {historico.map((registro) => (
-                                <li
-                                    key={registro.id}
+                    <ul>
+                        {historico.map((registro) => (
+                            <li key={registro.id}>
+                                <button
+                                    type="button"
                                     onClick={() => abrir(registro.id)}
-                                    className={`px-4 py-3 flex items-center justify-between gap-4 cursor-pointer hover:bg-gray-700/50 transition ${
-                                        atual?.id === registro.id ? 'bg-gray-700/40' : ''
+                                    className={`flex w-full cursor-pointer items-center gap-4 border-t border-line px-6 py-3.5 text-left transition-colors hover:bg-surface-sunken ${
+                                        atual?.id === registro.id ? 'bg-surface-sunken' : ''
                                     }`}
                                 >
-                                    <div className="min-w-0">
-                                        <p className="text-sm">
-                                            <span className="text-gray-500 font-mono mr-2">#{registro.id}</span>
-                                            {registro.arquivo_nome}
-                                        </p>
-                                        <p className="text-xs text-gray-400 mt-0.5">
+                                    <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <span className="font-mono text-label font-semibold text-ink-400">#{registro.id}</span>
+                                            <span className="truncate text-code font-medium text-ink-900">{registro.arquivo_nome}</span>
+                                        </div>
+                                        <span className="text-label text-ink-400">
                                             {formatarInstante(registro.criada_em)}
                                             {registro.usuario_nome ? ` · ${registro.usuario_nome}` : ''}
-                                        </p>
+                                        </span>
                                     </div>
-                                    <div className="flex items-center gap-4 whitespace-nowrap">
-                                        <span className="text-xs text-gray-400">
+                                    <div className="flex shrink-0 items-center gap-3.5">
+                                        <span className="font-mono text-label text-ink-600">
                                             {registro.processados}/{registro.total_anuncios ?? '?'}
-                                            {registro.ja_atualizados > 0 && (
-                                                <span className="text-amber-400 ml-2">
-                                                    {registro.ja_atualizados} recusados
-                                                </span>
-                                            )}
-                                            {registro.erros > 0 && (
-                                                <span className="text-red-400 ml-2">{registro.erros} erros</span>
-                                            )}
                                         </span>
-                                        <span className={`px-2 py-1 rounded-full text-xs font-bold ${corDoEstado(registro.estado)}`}>
-                                            {rotuloDoEstado(registro.estado)}
-                                        </span>
+                                        {registro.ja_atualizados > 0 && (
+                                            <span className="text-label text-warning">{registro.ja_atualizados} recusados</span>
+                                        )}
+                                        {registro.erros > 0 && (
+                                            <span className="text-label text-danger">{registro.erros} erros</span>
+                                        )}
+                                        <Badge tone={TOM_DO_ESTADO[registro.estado]}>{rotuloDoEstado(registro.estado)}</Badge>
                                     </div>
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
+                                </button>
+                            </li>
+                        ))}
+                    </ul>
                 )}
-            </section>
-        </div>
+            </Card>
+        </AppLayout>
     );
 };
 

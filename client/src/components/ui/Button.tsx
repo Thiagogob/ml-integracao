@@ -1,49 +1,41 @@
 import React from 'react';
 
-
-// Define as propriedades que o Button pode receber
+// Botao do redesenho: uma acao primaria (azul) por tela; as demais sao secundarias, com contorno.
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   children: React.ReactNode;
   isLoading?: boolean; // Estado para exibir spinner de carregamento
-  variant?: 'primary' | 'secondary' | 'danger'; // Variações de estilo
+  // success e danger entraram com a tela de importacao: autorizar uma execucao
+  // que toca ~980 anuncios e cancela-la no meio nao sao acoes neutras
+  variant?: 'primary' | 'secondary' | 'success' | 'danger';
+  size?: 'md' | 'lg'; // md: 8/14 de padding; lg: 12/20, usado nos botoes de largura total
+  icon?: React.ReactNode;
 }
 
-const Button: React.FC<ButtonProps> = ({ 
-  children, 
-  isLoading = false, 
-  variant = 'primary', 
+const Button: React.FC<ButtonProps> = ({
+  children,
+  isLoading = false,
+  variant = 'primary',
+  size = 'md',
+  icon,
   disabled,
-  ...rest 
+  className = '',
+  type = 'submit', // Mantido o padrao 'submit' para formularios
+  ...rest
 }) => {
-  
-  // Classes base Tailwind
-  const baseClasses = "w-full flex justify-center items-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium transition duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2";
+  const base =
+    'inline-flex items-center justify-center gap-2 rounded-md text-body font-semibold transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2';
+  const sizes = size === 'lg' ? 'px-5 py-3' : 'px-3.5 py-2';
+  const VARIANTES: Record<string, string> = {
+    secondary: 'bg-surface-card text-ink-900 border border-line',
+    success: 'bg-success text-white border border-success',
+    danger: 'bg-surface-card text-danger border border-danger-soft',
+    primary: 'bg-brand text-white border border-brand',
+  };
+  const variants = VARIANTES[variant] ?? VARIANTES.primary;
+  const state = isLoading || disabled ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-90 cursor-pointer';
 
-  // Variações de estilo (cores)
-  let variantClasses = '';
-  switch (variant) {
-    case 'secondary':
-      variantClasses = 'bg-gray-100 text-gray-700 hover:bg-gray-200 focus:ring-gray-500';
-      break;
-    case 'danger':
-      variantClasses = 'bg-red-600 text-white hover:bg-red-700 focus:ring-red-500';
-      break;
-    case 'primary':
-    default:
-      variantClasses = 'bg-indigo-600 text-white hover:bg-indigo-700 focus:ring-indigo-500';
-      break;
-  }
-  
-  // Classes para estado desabilitado/carregando
-  const stateClasses = (isLoading || disabled) 
-    ? 'opacity-50 cursor-not-allowed' 
-    : 'hover:scale-[1.01] active:scale-[0.99]'; 
-
-  const classes = `${baseClasses} ${variantClasses} ${stateClasses}`;
-
-  // Componente Spinner (SVG inline)
   const Spinner = () => (
-    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+    <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
     </svg>
@@ -51,9 +43,9 @@ const Button: React.FC<ButtonProps> = ({
 
   return (
     <button
-      className={classes}
-      type="submit" // Mudado o padrão para 'submit' para formulários
-      disabled={isLoading || disabled} 
+      type={type}
+      className={`${base} ${sizes} ${variants} ${state} ${className}`}
+      disabled={isLoading || disabled}
       {...rest}
     >
       {isLoading ? (
@@ -62,7 +54,10 @@ const Button: React.FC<ButtonProps> = ({
           <span>Carregando...</span>
         </>
       ) : (
-        children // O conteúdo normal do botão
+        <>
+          {icon && <span aria-hidden="true">{icon}</span>}
+          <span>{children}</span>
+        </>
       )}
     </button>
   );
