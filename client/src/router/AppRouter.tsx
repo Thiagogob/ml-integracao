@@ -1,8 +1,8 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import DashboardPage from '../pages/DashboardPage'; // Importa o Dashboard
-import GerarPedidoPage from '../pages/GerarPedidoPage';
-import { isLoggedIn, logout } from '../services/authService'; 
+import ImportacaoEstoquePage from '../pages/ImportacaoEstoquePage';
+import { isLoggedIn } from '../services/authService';
 import LoginPage from '../pages/LoginPage';
 import VendasPage from '../pages/VendasPage';
 import { ToastContainer } from 'react-toastify';
@@ -32,8 +32,8 @@ const AppRouter: React.FC = () => {
                     <Route path="/dashboard" element={<DashboardPage />} />
 
                     <Route path="/vendas" element={<VendasPage />} />
-                    
-                    <Route path="/gerar-pedido" element={<GerarPedidoPage />} />
+
+                    <Route path="/importar-estoque" element={<ImportacaoEstoquePage />} />
 
                     <Route path="/" element={<Navigate to="/dashboard" replace />} />
                     

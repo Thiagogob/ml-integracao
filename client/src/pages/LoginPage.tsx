@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import InputField from '../components/ui/InputField';
 import Button from '../components/ui/Button';
+import ErrorAlert from '../components/ui/ErrorAlert';
 import { login } from '../services/authService'; 
 import { useNavigate } from 'react-router-dom'; 
 
@@ -58,60 +59,68 @@ const LoginPage: React.FC = () => {
     };
 
     return (
-        // Contêiner principal: Fundo Cinza Escuro (bg-gray-900) e Letras Brancas (text-white)
-        <div className="min-h-screen flex items-center justify-center bg-gray-900 p-4">
-            
-           
-            <div className="w-full max-w-md p-8 space-y-6 bg-gray-800 rounded-xl shadow-2xl border border-gray-700">
-                
-                <h1 className="text-3xl font-bold text-center text-white">
-                    Acesso ao Sistema
-                </h1>
-                <p className="text-center text-gray-400">
-                    Insira suas credenciais para continuar
+        <div className="flex min-h-screen bg-surface-page">
+            {/* Painel de apresentacao (coluna esquerda) */}
+            <section className="hidden w-[620px] shrink-0 flex-col justify-center gap-6 bg-nav-bg p-16 lg:flex">
+                <div className="flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-brand text-body font-semibold text-white">ML</div>
+                    <span className="text-heading font-semibold text-white">ML Integração</span>
+                </div>
+                <p className="max-w-[480px] text-display font-bold text-white">
+                    Estoque do fornecedor, anúncios do Mercado Livre e coleta de pedidos em um só lugar.
                 </p>
-                
-                
-                {error && (
-                    // Alerta de erro com fundo vermelho escuro e texto claro
-                    <div className="bg-red-900 border border-red-700 text-red-300 px-4 py-3 rounded relative text-sm" role="alert">
-                        <span className="block sm:inline">{error}</span>
-                    </div>
-                )}
+                <p className="max-w-[460px] text-body text-nav-text">
+                    A plataforma concilia o relatório de estoque com os anúncios, consulta as vendas a cada 10 minutos e organiza a separação das rodas para coleta.
+                </p>
+            </section>
 
-                <form onSubmit={handleSubmit} className="space-y-6">
-                   
-                    <InputField
-                        label="Usuário"
-                        id="username"
-                        name="username"
-                        type="text"
-                        value={formData.username}
-                        onChange={handleChange}
-                        disabled={isLoading}
-                        autoComplete="username"
-                    />
-                    
-                    <InputField
-                        label="Senha"
-                        id="password"
-                        name="password"
-                        type="password"
-                        value={formData.password}
-                        onChange={handleChange}
-                        disabled={isLoading}
-                        autoComplete="current-password"
-                    />
-                    
-                    <Button 
-                        type="submit" 
-                        isLoading={isLoading}
-                        disabled={isLoading}
-                    >
-                        Entrar
-                    </Button>
-                </form>
-            </div>
+            {/* Formulario (coluna direita) */}
+            <section className="flex flex-1 items-center justify-center p-10">
+                <div className="flex w-full max-w-[420px] flex-col gap-5 rounded-xl border border-line bg-surface-card p-10 shadow-card">
+                    <div className="flex flex-col gap-1.5">
+                        <h1 className="text-display font-bold text-ink-900">Acesso ao sistema</h1>
+                        <p className="text-body text-ink-600">Insira suas credenciais para continuar.</p>
+                    </div>
+
+                    {error && <ErrorAlert message={error} />}
+
+                    <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+                        <div className="flex flex-col gap-4">
+                            <InputField
+                                label="Usuário"
+                                id="username"
+                                name="username"
+                                type="text"
+                                value={formData.username}
+                                onChange={handleChange}
+                                disabled={isLoading}
+                                autoComplete="username"
+                            />
+
+                            <InputField
+                                label="Senha"
+                                id="password"
+                                name="password"
+                                type="password"
+                                value={formData.password}
+                                onChange={handleChange}
+                                disabled={isLoading}
+                                autoComplete="current-password"
+                            />
+                        </div>
+
+                        <Button
+                            type="submit"
+                            size="lg"
+                            className="w-full"
+                            isLoading={isLoading}
+                            disabled={isLoading}
+                        >
+                            Entrar
+                        </Button>
+                    </form>
+                </div>
+            </section>
         </div>
     );
 };

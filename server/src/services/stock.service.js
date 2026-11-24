@@ -720,7 +720,22 @@ const colorCode = (acabamento) => {
 // // =====================================================================
 
 
-const saveStock = async (estoque, access_token, processCriticalUpdates) => {
+/**
+ * Sincronizacao do estoque a partir do relatorio de Sao Paulo.
+ *
+ * @param {object[]} estoque linhas lidas do PDF
+ * @param {string} access_token token do Mercado Livre
+ * @param {Function} processCriticalUpdates injetado por meli.service
+ * @param {object} [opcoes]
+ * @param {boolean} [opcoes.dryRun=false] modo de conferencia: faz toda a
+ *   normalizacao, o cruzamento com o cadastro e o diagnostico, e para antes de
+ *   gravar o estoque e antes de tocar no Mercado Livre. Devolve o mesmo
+ *   diagnostico, com resultadosML nulo. Usado pela fase de analise da
+ *   importacao acompanhada (importacoes.service.js), para que o operador veja
+ *   o que mudaria antes de confirmar.
+ */
+const saveStock = async (estoque, access_token, processCriticalUpdates, opcoes = {}) => {
+    const { dryRun = false } = opcoes;
     const uniqueFields = ['modelo', 'aro', 'pcd', 'offset', 'acabamento'];
     const transaction = await sequelize.transaction();
     
@@ -1063,29 +1078,10 @@ const saveStock = async (estoque, access_token, processCriticalUpdates) => {
             }
         }
 
-        // 5. ATUALIZAÇÃO DO BANCO DE DADOS
-        // Importante: Não incluímos 'sku' no updateOnDuplicate para preservar os SKUs já cadastrados
-        await Estoque.bulkCreate(registrosLimpos, {
-            updateOnDuplicate: ['qtde_sp', 'qtde_sc', 'qtde_pr'],
-            transaction: transaction
-        });
-
-        await transaction.commit();
-
-        // 6. DISPARO DA ATUALIZAÇÃO EM MASSA PARA O MERCADO LIVRE
-        let relatorioML = { atualizados: [], jaAtualizados: [], erros: [] };
-        if (listaParaSincronizarML.length > 0) {
-            try {
-                logger.info({ skus: listaParaSincronizarML.length }, 'ML: iniciando sincronizacao em massa');
-                relatorioML = await processCriticalUpdates(listaParaSincronizarML, access_token);
-            } catch (apiError) {
-                logger.error({ err: apiError }, 'falha na atualizacao em massa do ML');
-            }
-        }
-
-        logger.info({ modelosProcessados: registrosLimpos.length, anunciosEnviados: listaParaSincronizarML.length }, 'sincronizacao de estoque concluida');
-
-        return {
+        // Fabrica do diagnostico, compartilhada pelos dois caminhos (conferencia
+        // e execucao) para que o relatorio tenha exatamente o mesmo formato nos
+        // dois, que e o formato gravado em logs/sync-*.json desde abril.
+        const montarDiagnostico = (relatorioML) => ({
             timestamp: new Date().toISOString(),
             formatoNovoDetectado,
             resumo: {
@@ -1108,9 +1104,50 @@ const saveStock = async (estoque, access_token, processCriticalUpdates) => {
                     candidatosNoPDF: candidatos
                 };
             }),
+            // SKUs que iriam ao Mercado Livre. No modo de conferencia e o que
+            // permite expandir em anuncios e saber o total antes de comecar.
+            planoML: listaParaSincronizarML.map(({ sku }) => sku),
             resultadosML: relatorioML,
             debugTrace: { sku: DEBUG_SKU, eventos: getDebugTrace() }
-        };
+        });
+
+        // MODO DE CONFERENCIA: para aqui. O estoque nao e gravado e nenhuma
+        // chamada ao Mercado Livre e feita. O diagnostico e montado antes do
+        // rollback de proposito: se a montagem falhasse depois de desfazer a
+        // transacao, o catch tentaria desfazer de novo.
+        if (dryRun) {
+            const diagnostico = montarDiagnostico(null);
+            await transaction.rollback();
+            logger.info({
+                totalRodasNoPDF: diagnostico.resumo.totalRodasNoPDF,
+                skusParaML: diagnostico.planoML.length
+            }, 'conferencia de estoque concluida sem gravar nada');
+            return diagnostico;
+        }
+
+        // 5. ATUALIZAÇÃO DO BANCO DE DADOS
+        // Importante: Não incluímos 'sku' no updateOnDuplicate para preservar os SKUs já cadastrados
+        await Estoque.bulkCreate(registrosLimpos, {
+            updateOnDuplicate: ['qtde_sp', 'qtde_sc', 'qtde_pr'],
+            transaction: transaction
+        });
+
+        await transaction.commit();
+
+        // 6. DISPARO DA ATUALIZAÇÃO EM MASSA PARA O MERCADO LIVRE
+        let relatorioML = { atualizados: [], jaAtualizados: [], erros: [] };
+        if (listaParaSincronizarML.length > 0) {
+            try {
+                logger.info({ skus: listaParaSincronizarML.length }, 'ML: iniciando sincronizacao em massa');
+                relatorioML = await processCriticalUpdates(listaParaSincronizarML, access_token);
+            } catch (apiError) {
+                logger.error({ err: apiError }, 'falha na atualizacao em massa do ML');
+            }
+        }
+
+        logger.info({ modelosProcessados: registrosLimpos.length, anunciosEnviados: listaParaSincronizarML.length }, 'sincronizacao de estoque concluida');
+
+        return montarDiagnostico(relatorioML);
 
     } catch (error) {
         if (transaction) await transaction.rollback();

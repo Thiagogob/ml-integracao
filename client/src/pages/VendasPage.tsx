@@ -3,6 +3,13 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../services/api'; 
 import { logout } from '../services/authService';
+import AppLayout from '../components/ui/AppLayout';
+import Badge from '../components/ui/Badge';
+import type { BadgeTone } from '../components/ui/Badge';
+import Button from '../components/ui/Button';
+import Card from '../components/ui/Card';
+import ErrorAlert from '../components/ui/ErrorAlert';
+import PageHeader from '../components/ui/PageHeader';
 
 
 interface Venda {
@@ -27,7 +34,6 @@ const VendasPage: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [rawVendas, setRawVendas] = useState<Venda[]>([]);
-    const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set());
 
     const view = searchParams.get('view') || 'coleta';
 
@@ -71,17 +77,20 @@ const vendasExibidas = useMemo(() => {
         );
     }, [rawVendas, view]);
     
-const handleToggleSelecao = (vendaId: string) => {
-        setSelecionadas(prev => {
-            const novoSet = new Set(prev);
-            if (novoSet.has(vendaId)) {
-                novoSet.delete(vendaId);
-            } else {
-                novoSet.add(vendaId);
-            }
-            return novoSet;
-        });
-    };
+    // Contagens das abas e resumo por disponibilidade, calculados a partir da mesma lista.
+    const totalColeta = useMemo(() => rawVendas.filter(v => v.disponibilidade !== 'pendencia').length, [rawVendas]);
+    const totalPendencias = useMemo(() => rawVendas.filter(v => v.disponibilidade === 'pendencia').length, [rawVendas]);
+    const resumo = useMemo(() => {
+        const ordem: Array<Venda['disponibilidade']> = ['campinas', 'sul', 'pendencia', null];
+        return ordem
+            .map(disp => {
+                const quantidade = vendasExibidas.filter(v => v.disponibilidade === disp).length;
+                const rotulos: Record<string, string> = { campinas: 'pronta entrega', sul: 'solicitar do sul', pendencia: 'pendência', null: 'indefinido' };
+                const tons: Record<string, BadgeTone> = { campinas: 'success', sul: 'warning', pendencia: 'danger', null: 'neutral' };
+                return { chave: String(disp), quantidade, rotulo: rotulos[String(disp)], tone: tons[String(disp)] };
+            })
+            .filter(item => item.quantidade > 0);
+    }, [vendasExibidas]);
 
     // --- 3. FUNÇÕES DE NAVEGAÇÃO DOS BOTÕES ---
 const setView = (newView: 'coleta' | 'pendencia') => {
@@ -92,37 +101,16 @@ const setView = (newView: 'coleta' | 'pendencia') => {
         }
     };
 
-const handleViewToggle = () => {
-        const nextView = view === 'coleta' ? 'pendencia' : 'coleta';
-        setView(nextView);
-    };
-
-const getEstoqueIndicator = (venda: Venda) => {
+const getEstoqueIndicator = (venda: Venda): { label: string; tone: BadgeTone } => {
     switch (venda.disponibilidade) {
         case 'campinas':
-            return {
-                label: 'PRONTA ENTREGA',
-                color: 'bg-green-600', 
-                icon: '⚡'
-            };
+            return { label: 'Pronta entrega', tone: 'success' };
         case 'sul':
-            return {
-                label: 'SOLICITAR DO SUL',
-                color: 'bg-yellow-600', 
-                icon: '🚚'
-            };
+            return { label: 'Solicitar do sul', tone: 'warning' };
         case 'pendencia':
-            return {
-                label: 'PENDÊNCIA DE ESTOQUE',
-                color: 'bg-red-600', 
-                icon: '❌'
-            };
+            return { label: 'Pendência de estoque', tone: 'danger' };
         default:
-            return {
-                label: 'STATUS INDEFINIDO',
-                color: 'bg-gray-500', 
-                icon: '❓'
-            };
+            return { label: 'Status indefinido', tone: 'neutral' };
     }
 };
 
@@ -162,124 +150,147 @@ const handleMarcarComoColetado = async (vendaId: string, setVendas: any, setErro
 
     // --- Renderização de Estados ---
     if (loading) {
-        return <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">Carregando Vendas...</div>;
+        return (
+            <AppLayout gap="md">
+                <Card className="p-6 text-body text-ink-600">Carregando Vendas...</Card>
+            </AppLayout>
+        );
     }
 
-const handleGerarPedido = () => {
-        // 1. Filtrar apenas as rodas que foram selecionadas
-        const vendasSelecionadas = rawVendas.filter(venda => selecionadas.has(venda.id_venda));
-
-        if (vendasSelecionadas.length === 0) {
-            alert("Selecione pelo menos uma roda para gerar o pedido.");
-            return;
-        }
-
-        // 2. Navegar, passando os dados no state
-        navigate('/gerar-pedido', { 
-            state: { vendas: vendasSelecionadas } 
-        });
+    // --- Renderização Principal ---
+    const formatarData = (iso: string) => {
+        const d = new Date(iso);
+        if (Number.isNaN(d.getTime())) return '';
+        return `${d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
     };
 
+    const colunas = 'flex items-center gap-4 px-5 py-3.5';
 
-    // --- Renderização Principal ---
- return (
-<div className="min-h-screen bg-gray-900 text-white p-8">
-            <header className="flex justify-between items-center mb-10 border-b border-gray-700 pb-4">
-                <h1 className="text-4xl font-bold text-indigo-400">
-                    {view === 'coleta' ? '📦 Lista de Coleta' : '❌ Lista de Pendências'}
-                </h1>
-                <div className="flex space-x-4">
-                    
-                    <button
-                        onClick={handleGerarPedido}
-                        disabled={selecionadas.size === 0}
-                        className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${selecionadas.size === 0 ? 'bg-gray-500 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'}`}
-                    >
-                        Gerar Pedido ({selecionadas.size})
-                    </button>
+    return (
+        <AppLayout gap="md">
+            <PageHeader
+                breadcrumb="Vendas"
+                title={view === 'coleta' ? 'Lista de coleta' : 'Lista de pendências'}
+                subtitle="Vendas do Mercado Livre ainda não coletadas, consultadas a cada 10 minutos."
+                actions={
+                    <Button type="button" variant="secondary" onClick={() => handleGoBack()}>
+                        ← Voltar
+                    </Button>
+                }
+            />
 
-                    <button
-
-                        onClick={handleViewToggle}
-                        className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${view === 'coleta' ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'}`}
-                    >
-                        {view === 'coleta' ? 'Listar Pendências' : 'Listar Rodas para Coleta'}
-                    </button>
-                    
-                    <button
-                        onClick={() => handleGoBack()} // Usando a chamada correta para a função
-                        className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm font-semibold transition"
-                    >
-                        &larr; Voltar
-                    </button>
+            <div className="flex w-full flex-wrap items-center justify-between gap-4">
+                <div className="flex gap-1 rounded-lg bg-line p-1" role="tablist" aria-label="Visão da lista">
+                    <TabButton ativo={view === 'coleta'} onClick={() => setView('coleta')} rotulo="Para coleta" contagem={totalColeta} tom="info" />
+                    <TabButton ativo={view === 'pendencia'} onClick={() => setView('pendencia')} rotulo="Pendências" contagem={totalPendencias} tom="danger" />
                 </div>
-            </header>
-
-            {error && <div className="bg-red-900 text-red-300 p-3 rounded mb-4">{error}</div>}
-
-            <div className="space-y-4"> 
-
-                {vendasExibidas.length === 0 ? (
-                    <p className="text-center text-gray-400">Nenhuma venda com pendência de estoque.</p>
-                ) : (
-                    vendasExibidas.map((venda) => {
-                        const indicator = getEstoqueIndicator(venda);
-                        return (
-                            <div 
-                                key={venda.id_venda} 
-                                className="bg-gray-800 p-5 rounded-xl shadow-lg border border-gray-700 flex justify-between items-center transition hover:border-indigo-500"
-                            >
-                        <input 
-                            type="checkbox"
-                            checked={selecionadas.has(venda.id_venda)}
-                            onChange={() => handleToggleSelecao(venda.id_venda)}
-                            className="mr-4 h-5 w-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                        />
-                                {/* Bloco Esquerdo: Detalhes da Venda */}
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-sm text-gray-400">
-                                        ID do anúncio: <span className="font-semibold text-gray-300">{venda.id_ml}</span>
-                                    </p>
-                                    <p className="text-sm text-gray-400">
-                                        Pedido ID: <span className="font-semibold text-indigo-400">{venda.id_venda}</span>
-                                    </p>
-                                    <h3 className="text-xl font-bold truncate text-white mt-1">
-                                        {venda.sku} <span className="text-base font-normal text-gray-400">({venda.quantidade} Un.)</span>
-                                    </h3>
-                                    
-                                    {/* Indicação de Estoque */}
-                                    <span 
-                                        className={`mt-2 inline-block px-3 py-1 text-xs font-semibold rounded-full text-white ${indicator.color}`}
-                                    >
-                                        {indicator.icon} {indicator.label}
-                                    </span>
-                                </div>
-                                
-                                {/* Bloco Direito: Ação e Valores */}
-                                <div className="flex flex-col items-end space-y-2 ml-4">
-                                    <p className="text-2xl font-bold text-green-400">{formatCurrency(venda.valor)}</p>
-                                    <p className="text-sm text-red-400">Comissão: {formatCurrency(venda.comissao)}</p>
-                                    
-                                    {view === 'coleta' ? (
-                                        <button
-                                            onClick={() => handleMarcarComoColetado(venda.id_venda, setRawVendas, setError)}
-                                            className="mt-3 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-semibold transition flex items-center"
-                                        >
-                                            ✅ Marcar como Coletado
-                                        </button>
-                                    ) : (
-                                        <span className="mt-3 px-4 py-2 text-sm text-gray-400 border border-gray-600 rounded-lg">
-                                            Aguardando Estoque
-                                        </span>
-                                    )}
-                                </div>
-                            </div>
-                        );
-                    })
+                {resumo.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-body text-ink-600">Nesta lista:</span>
+                        {resumo.map(item => (
+                            <Badge key={item.chave} tone={item.tone}>{item.quantidade} {item.rotulo}</Badge>
+                        ))}
+                    </div>
                 )}
             </div>
-        </div>
+
+            {error && <ErrorAlert message={error} />}
+
+            <Card className="w-full overflow-hidden">
+                <div className="overflow-x-auto">
+                    <div className="min-w-[1004px]">
+                        <div className={`${colunas} bg-surface-sunken text-label font-semibold uppercase text-ink-600`}>
+                            <span className="min-w-0 flex-1">Venda</span>
+                            <span className="w-16 shrink-0">Qtd.</span>
+                            <span className="w-[196px] shrink-0">Disponibilidade</span>
+                            <span className="w-[120px] shrink-0">Data</span>
+                            <span className="w-[150px] shrink-0 text-right">Valor e comissão</span>
+                            <span className="w-[200px] shrink-0" />
+                        </div>
+
+                        {vendasExibidas.length === 0 ? (
+                            <p className="border-t border-line px-5 py-6 text-body text-ink-400">
+                                {view === 'coleta' ? 'Nenhuma roda aguardando coleta.' : 'Nenhuma venda com pendência de estoque.'}
+                            </p>
+                        ) : (
+                            vendasExibidas.map((venda) => {
+                                const indicator = getEstoqueIndicator(venda);
+                                return (
+                                    <div
+                                        key={venda.id_venda}
+                                        className={`${colunas} border-t border-line bg-surface-card`}
+                                    >
+                                        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                                            <span className="truncate font-mono text-code font-medium text-ink-900">{venda.sku}</span>
+                                            <span className="text-body text-ink-600">
+                                                Pedido {venda.id_venda} · Anúncio {venda.id_ml}
+                                            </span>
+                                        </div>
+                                        <span className="w-16 shrink-0 text-body font-semibold text-ink-900">{venda.quantidade} un.</span>
+                                        <span className="w-[196px] shrink-0">
+                                            <Badge tone={indicator.tone}>{indicator.label}</Badge>
+                                        </span>
+                                        <span className="w-[120px] shrink-0 text-body text-ink-600">{formatarData(venda.data)}</span>
+                                        <div className="flex w-[150px] shrink-0 flex-col items-end gap-0.5">
+                                            <span className="text-body font-semibold text-ink-900">{formatCurrency(venda.valor)}</span>
+                                            <span className="text-body text-danger">Comissão {formatCurrency(venda.comissao)}</span>
+                                        </div>
+                                        <div className="flex w-[200px] shrink-0 justify-end">
+                                            {view === 'coleta' ? (
+                                                <Button
+                                                    type="button"
+                                                    variant="secondary"
+                                                    icon="✓"
+                                                    onClick={() => handleMarcarComoColetado(venda.id_venda, setRawVendas, setError)}
+                                                >
+                                                    Marcar como coletada
+                                                </Button>
+                                            ) : (
+                                                <span className="rounded-md border border-line px-3.5 py-2 text-body font-semibold text-ink-600">
+                                                    Aguardando estoque
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        )}
+
+                        <div className="flex items-center justify-between border-t border-line bg-surface-sunken px-5 py-3">
+                            <span className="text-body text-ink-600">
+                                {vendasExibidas.length === 1
+                                    ? '1 venda aguardando coleta'
+                                    : `${vendasExibidas.length} vendas aguardando coleta`}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </Card>
+        </AppLayout>
     );
 };
+
+interface TabButtonProps {
+    ativo: boolean;
+    onClick: () => void;
+    rotulo: string;
+    contagem: number;
+    tom: 'info' | 'danger';
+}
+
+const TabButton: React.FC<TabButtonProps> = ({ ativo, onClick, rotulo, contagem, tom }) => (
+    <button
+        type="button"
+        role="tab"
+        aria-selected={ativo}
+        onClick={onClick}
+        className={`flex items-center gap-2 rounded-md px-3.5 py-2 text-body cursor-pointer ${ativo ? 'bg-surface-card font-semibold text-ink-900 shadow-card' : 'text-ink-600'}`}
+    >
+        <span>{rotulo}</span>
+        <span className={`rounded-full px-2 py-px text-label font-semibold ${tom === 'info' ? 'bg-brand-soft text-brand-strong' : 'bg-danger-soft text-danger'}`}>
+            {contagem}
+        </span>
+    </button>
+);
 
 export default VendasPage;

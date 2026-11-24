@@ -237,6 +237,15 @@ Venda.belongsTo(Estoque, {
 
 
 // --- 2. Sincronização do Banco de Dados ---
+// Modelos da importacao acompanhada. Definidos por fabrica em
+// config/models/importacoes.js para que a suite possa cria-los sobre um sqlite
+// em memoria. O esquema de producao vem da migracao
+// migrations/importacoes_estoque_up.sql, nao de sync(): syncDb abaixo apenas
+// autentica, nunca cria tabela.
+const { definirModelosImportacao } = require('./models/importacoes');
+const { Importacao, ImportacaoEvento } = definirModelosImportacao(sequelize);
+
+
 const syncDb = async () => {
     try {
         await sequelize.authenticate();
@@ -258,6 +267,8 @@ module.exports = {
     SyncControl,
     User,
     FalhaAtualizacaoML,
+    Importacao,
+    ImportacaoEvento,
     syncDb
 };
 

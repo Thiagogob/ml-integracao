@@ -1,4 +1,6 @@
 import React from 'react';
+import Card from './Card';
+import Badge from './Badge';
 
 interface TopVenda {
     sku: string;
@@ -10,30 +12,42 @@ interface Top5Props {
 }
 
 const Top5Card: React.FC<Top5Props> = ({ data }) => {
+    // A barra de cada item e proporcional ao mais vendido da lista.
+    const maior = Math.max(1, ...data.map(item => Number(item.total_vendido) || 0));
+
     return (
-        <div className="bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-700 col-span-1 md:col-span-3">
-            <h2 className="text-xl font-bold text-indigo-400 mb-4">🏆 Top 5 Rodas Mais Vendidas (Últimos 15 Dias)</h2>
-            
+        <Card className="flex flex-1 flex-col gap-4 p-6">
+            <div className="flex items-center justify-between">
+                <h2 className="text-heading font-semibold text-ink-900">Mais vendidas</h2>
+                <Badge tone="info">Últimos 15 dias</Badge>
+            </div>
+
             {data.length === 0 ? (
-                <p className="text-gray-400 text-center">Nenhuma venda de roda registrada nos últimos 15 dias.</p>
+                <p className="text-body text-ink-400">Nenhuma venda de roda registrada nos últimos 15 dias.</p>
             ) : (
-                <ul className="space-y-2"> 
+                <ol className="flex flex-col gap-3">
                     {data.map((item, index) => (
-                        <li 
-                            key={item.sku} 
-                            className="flex justify-between items-center py-2 px-3 bg-gray-700/50 rounded-lg hover:bg-gray-700 transition"
-                        >
-                            <span className="text-base font-semibold text-white"> 
-                                #{index + 1} - {item.sku}
-                            </span>
-                            <span className="text-base font-extrabold text-green-400"> 
-                                {item.total_vendido} VENDAS
-                            </span>
+                        <li key={item.sku} className="flex flex-col gap-1.5">
+                            <div className="flex items-center justify-between gap-2.5">
+                                <div className="flex min-w-0 items-center gap-2.5">
+                                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-soft text-label font-semibold text-brand-strong">
+                                        {index + 1}
+                                    </span>
+                                    <span className="truncate font-mono text-code font-medium text-ink-900">{item.sku}</span>
+                                </div>
+                                <span className="shrink-0 text-body font-semibold text-ink-900">{item.total_vendido} vendas</span>
+                            </div>
+                            <div className="h-1.5 w-full rounded-full bg-neutral-soft">
+                                <div
+                                    className="h-1.5 rounded-full bg-brand"
+                                    style={{ width: `${(Number(item.total_vendido) / maior) * 100}%` }}
+                                />
+                            </div>
                         </li>
                     ))}
-                </ul>
+                </ol>
             )}
-        </div>
+        </Card>
     );
 };
 
