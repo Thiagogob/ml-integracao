@@ -1,10 +1,10 @@
-const { Venda, Estoque, Anuncio} = require('../config/database');
+const { Venda, Estoque, Anuncio, sequelize } = require('../config/database');
 const logger = require('../config/logger');
 const { Sequelize } = require('sequelize');
 const syncControlService = require('./syncControl.service');
 const meliService = require('./meli.service');
 const { listarVendas } = require('../controllers/VendasController');
-const { Op, fn, col, literal } = require('sequelize');
+const { Op, fn, col, literal, QueryTypes } = require('sequelize');
 const STORE_ID = parseInt(process.env.STORE_ID, 10);
 
 
@@ -428,73 +428,49 @@ const syncVendas = async (accessToken) => {
 };
 
 
+// SKUs de jogo com duas talas: não existem como linha única no estoque (ver salesScheduler)
+const SKUS_DUAS_TALAS = [
+    'M08ARO14675-114BD',
+    'M08ARO14675-114FBD',
+    'M08ARO15785-114BD',
+    'M08ARO15785-114FBD',
+];
+
+// Unidades de roda vendidas hoje (dia de São Paulo), com a mesma regra de baixa do observador:
+// anúncio unitário vale 'quantidade' rodas; qualquer outro (jogo) vale 'quantidade' x 4.
+// Só contam vendas cujo SKU é de roda (existe no estoque ou é jogo de duas talas).
 const countDailyRodasVendidas = async() => {
-    // 1. Calcular início e fim do dia atual
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
-
-    const endOfToday = new Date();
-    endOfToday.setHours(23, 59, 59, 999);
-
-    let rodasVendidasCount = 0;
-    const validRodasSkuCache = new Set(); 
-
     try {
-        
-        // 2. CONSULTA SIMPLES: Buscar todas as vendas do dia (Sem JOIN)
-        const vendasDoDia = await Venda.findAll({
-            attributes: ['id', 'sku', 'id_venda', 'data'],
-            where: {
-                store_id: STORE_ID,
-                data: {
-                    [Op.between]: [startOfToday, endOfToday]
-                }
-            },
-            raw: true
+        const [resultado] = await sequelize.query(`
+            SELECT COALESCE(SUM(
+                COALESCE(v.quantidade, 1) *
+                CASE WHEN (
+                    SELECT a."isUnitario" FROM anuncios a
+                    WHERE a.ml_id = v.id_ml
+                    LIMIT 1
+                ) IS TRUE THEN 1 ELSE 4 END
+            ), 0) AS total
+            FROM vendas_ml v
+            WHERE v.store_id = :storeId
+              -- 'data' é TEXT com o date_closed do ML (ex.: 2026-11-24T15:32:10.000-03:00);
+              -- comparar com objetos Date virava comparação de texto e o resultado era sempre 0.
+              -- O servidor roda em UTC, por isso o dia é calculado no fuso de São Paulo.
+              AND (NULLIF(v.data, '')::timestamptz AT TIME ZONE 'America/Sao_Paulo')::date
+                  = (now() AT TIME ZONE 'America/Sao_Paulo')::date
+              AND (
+                  v.sku IN (:skusDuasTalas)
+                  OR EXISTS (SELECT 1 FROM estoque_rodas_distribuidora e WHERE e.sku = v.sku)
+              )
+        `, {
+            replacements: { storeId: STORE_ID, skusDuasTalas: SKUS_DUAS_TALAS },
+            type: QueryTypes.SELECT
         });
 
-        if (vendasDoDia.length === 0) {
-            return 0;
-        }
-
-        
-        // 3. PROCESSAMENTO EM NODE.JS E VERIFICAÇÃO DE ESTOQUE
-        
-        for (const venda of vendasDoDia) {
-            const sku = venda.sku;
-
-            // Otimização: Se o SKU já foi verificado e é válido, apenas contabiliza
-            if (validRodasSkuCache.has(sku)) {
-                
-                
-                rodasVendidasCount++;
-                continue;
-            }
-
-            // 4. VERIFICAR CORRESPONDÊNCIA NA TABELA ESTOQUE
-            const existeEstoque = await Estoque.findOne({
-                attributes: ['sku'], 
-                where: { sku: sku },
-                raw: true
-            });
-
-            if (existeEstoque) {
-                // Se for um SKU de roda, adiciona ao cache e contabiliza
-                validRodasSkuCache.add(sku);
-                rodasVendidasCount++;
-                
-
-            }
-            
-            // Se não existir, o loop continua (não é uma venda de roda)
-        }
-        
-        
-        return rodasVendidasCount;
+        return parseInt(resultado.total, 10) || 0;
 
     } catch (error) {
         logger.error({ err: error }, 'erro fatal na contagem de rodas vendidas');
-        return 0; 
+        return 0;
     }
 }
 
