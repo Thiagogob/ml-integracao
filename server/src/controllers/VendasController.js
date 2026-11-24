@@ -46,14 +46,14 @@ exports.listarVendas = async (req, res) => {
 };
 
 exports.marcarComoColetada = async (req, res) => {
-        const idVenda = req.params.idVenda; // Captura o ID da rota
-        
-        if (!idVenda) {
-            return res.status(400).json({ error: 'ID da Venda é obrigatório.' });
+        const idVendaItem = Number(req.params.idVendaItem); // id da linha em vendas_ml
+
+        if (!Number.isInteger(idVendaItem) || idVendaItem <= 0) {
+            return res.status(400).json({ error: 'ID da venda inválido.' });
         }
 
         try {
-            const result = await vendasService.marcarComoColetada(idVenda);
+            const result = await vendasService.marcarComoColetada(idVendaItem);
             return res.status(200).json(result);
         } catch (error) {
             logger.error({ err: error }, 'erro ao marcar venda como coletada');

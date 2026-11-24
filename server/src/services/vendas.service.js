@@ -8,23 +8,26 @@ const { Op, fn, col, literal, QueryTypes } = require('sequelize');
 const STORE_ID = parseInt(process.env.STORE_ID, 10);
 
 
-const marcarComoColetada = async (idVenda) => {
+// idVendaItem é o id (PK) da linha em vendas_ml: um pedido com vários itens tem várias linhas,
+// e cada item é coletado separadamente
+const marcarComoColetada = async (idVendaItem) => {
     try {
             const [updatedRows] = await Venda.update({
                 coletada: true
             }, {
                 where: {
-                    id_venda: idVenda
+                    id: idVendaItem,
+                    store_id: STORE_ID
                 }
             });
 
             if (updatedRows === 0) {
-                throw new Error(`Venda com ID ${idVenda} não encontrada.`);
+                throw new Error(`Venda com ID ${idVendaItem} não encontrada.`);
             }
 
-            return { success: true, message: `Venda ${idVenda} marcada como coletada.` };
+            return { success: true, message: `Venda ${idVendaItem} marcada como coletada.` };
         } catch (error) {
-            logger.error({ err: error, idVenda }, 'erro ao marcar venda como coletada');
+            logger.error({ err: error, idVendaItem }, 'erro ao marcar venda como coletada');
             throw new Error(`Falha ao atualizar status de coleta: ${error.message}`);
         }
 }
@@ -53,6 +56,7 @@ const getTop5RodasVendidas = async () => {
 
                 where: {
                     store_id: STORE_ID,
+                    status: 'paid',
                     data: {
                         [Op.gte]: quinzeDiasAtras.toISOString()
                     }
@@ -110,6 +114,7 @@ const indiceAtencaoLiteral = literal(`
                 
                 where: {
                     store_id: STORE_ID,
+                    status: 'paid',
                     data: {
                         [Op.gte]: quinzeDiasAtras.toISOString()
                     }
@@ -163,6 +168,7 @@ const listarTodasAsVendas = async () => {
             where: {
                     store_id: STORE_ID,
                     coletada: false,
+                    status: 'paid',
                 },
             attributes: [
                 'id', // PK para debug/chave única no React
@@ -214,6 +220,7 @@ const listarTodasAsVendas = async () => {
                 }
 
                 return {
+                    id: vendaData.id, // identifica o item (um pedido pode ter vários)
                     id_venda: vendaData.id_venda,
                     data_venda: vendaData.data_venda,
                     id_ml: vendaData.id_ml,
@@ -241,7 +248,7 @@ const listarTodasAsVendas = async () => {
 }
 
 
-const preencherDisponibilidade = async (idVenda, sku, quantidadeNecessaria) => {
+const preencherDisponibilidade = async (idVenda, sku, quantidadeNecessaria, itemSeq = 0) => {
 
         let novoStatus = 'pendencia'; // Assume pendência como default
         
@@ -283,7 +290,7 @@ const preencherDisponibilidade = async (idVenda, sku, quantidadeNecessaria) => {
             await Venda.update({
                 disponibilidade: novoStatus
             }, {
-                where: { id_venda: idVenda }
+                where: { id_venda: String(idVenda), item_seq: itemSeq }
             });
 
         } catch (error) {
@@ -299,29 +306,27 @@ const salvarVendas = async (vendas) => {
     try{
         logger.info('iniciando salvamento de vendas');
         let registrosParaInserir = [];
+    // Uma linha por item: antes só o order_items[0] era gravado, e os demais itens de um
+    // carrinho com várias rodas sumiam da coleta e das métricas
     for (const venda of vendas) {
-        
-
-                            
+        venda.order_items.forEach((item, itemSeq) => {
             registrosParaInserir.push({
                     data: venda.date_closed,
-                    id_venda: venda.id,
-                    id_ml: venda.order_items[0].item.id,
-                    sku: venda.order_items[0].item.seller_sku,
-                    valor: venda.order_items[0].unit_price,
-                    comissao: venda.order_items[0].sale_fee,
-                    quantidade: venda.order_items[0].requested_quantity.value,
+                    id_venda: String(venda.id),
+                    item_seq: itemSeq,
+                    id_ml: item.item.id,
+                    sku: item.item.seller_sku,
+                    valor: item.unit_price,
+                    comissao: item.sale_fee,
+                    quantidade: item.requested_quantity.value,
                     store_id: STORE_ID
                 });
-
-
-
-        
+        });
     }
 
     if (registrosParaInserir.length > 0) {
             
-            // O PostgreSQL tentará inserir todos. Se houver violação de unicidade (id_venda), 
+            // O PostgreSQL tentará inserir todos. Se houver violação de unicidade (id_venda, item_seq), 
             // ele simplesmente ignora a linha e continua.
             const novosRegistros = await Venda.bulkCreate(registrosParaInserir, {
                 ignoreDuplicates: true,
@@ -411,7 +416,9 @@ const syncVendas = async (accessToken) => {
     await syncControlService.updateCheckpoint(vendaMaisRecente.date_closed);
 
     const skusEAnunciosVendidos = vendasNovas.flatMap(venda => 
-        venda.order_items.map(item => ({
+        venda.order_items.map((item, itemSeq) => ({
+
+            item_seq: itemSeq,
 
             sku: item.item.seller_sku,
 
@@ -428,6 +435,30 @@ const syncVendas = async (accessToken) => {
 };
 
 
+// Pedidos pagos que foram cancelados depois: marca as linhas como 'cancelled' para saírem
+// do card, do top 5, da atenção e da coleta. O estoque NÃO é devolvido automaticamente.
+const marcarPedidosCancelados = async (accessToken) => {
+    const idsCancelados = await meliService.getIdsPedidosCancelados(accessToken);
+
+    if (idsCancelados.length === 0) {
+        return 0;
+    }
+
+    const [linhasAtualizadas] = await Venda.update({ status: 'cancelled' }, {
+        where: {
+            store_id: STORE_ID,
+            status: 'paid',
+            id_venda: { [Op.in]: idsCancelados }
+        }
+    });
+
+    if (linhasAtualizadas > 0) {
+        logger.warn({ linhasAtualizadas }, 'vendas canceladas apos pagamento marcadas como cancelled (estoque nao devolvido)');
+    }
+
+    return linhasAtualizadas;
+};
+
 // SKUs de jogo com duas talas: não existem como linha única no estoque (ver salesScheduler)
 const SKUS_DUAS_TALAS = [
     'M08ARO14675-114BD',
@@ -437,26 +468,33 @@ const SKUS_DUAS_TALAS = [
 ];
 
 // Unidades de roda vendidas hoje (dia de São Paulo), com a mesma regra de baixa do observador:
-// anúncio unitário vale 'quantidade' rodas; qualquer outro (jogo) vale 'quantidade' x 4.
-// Só contam vendas cujo SKU é de roda (existe no estoque ou é jogo de duas talas).
+// - só vendas cujo anúncio está na tabela anuncios (sem ele o observador não dá baixa);
+// - anúncio unitário vale 'quantidade' rodas; jogo vale 'quantidade' x 4;
+// - só SKUs de roda (existem no estoque ou são jogos de duas talas);
+// - pedidos cancelados depois de pagos não contam.
 const countDailyRodasVendidas = async() => {
     try {
         const [resultado] = await sequelize.query(`
             SELECT COALESCE(SUM(
-                COALESCE(v.quantidade, 1) *
-                CASE WHEN (
-                    SELECT a."isUnitario" FROM anuncios a
-                    WHERE a.ml_id = v.id_ml
-                    LIMIT 1
-                ) IS TRUE THEN 1 ELSE 4 END
+                COALESCE(v.quantidade, 1) * CASE WHEN a."isUnitario" IS TRUE THEN 1 ELSE 4 END
             ), 0) AS total
             FROM vendas_ml v
+            JOIN LATERAL (
+                SELECT an."isUnitario" FROM anuncios an
+                WHERE an.ml_id = v.id_ml AND an.store_id = v.store_id
+                LIMIT 1
+            ) a ON TRUE
             WHERE v.store_id = :storeId
-              -- 'data' é TEXT com o date_closed do ML (ex.: 2026-11-24T15:32:10.000-03:00);
-              -- comparar com objetos Date virava comparação de texto e o resultado era sempre 0.
-              -- O servidor roda em UTC, por isso o dia é calculado no fuso de São Paulo.
-              AND (NULLIF(v.data, '')::timestamptz AT TIME ZONE 'America/Sao_Paulo')::date
-                  = (now() AT TIME ZONE 'America/Sao_Paulo')::date
+              AND v.status = 'paid'
+              -- 'data' é TEXT com o date_closed do ML (ex.: 2026-11-24T15:32:10.000-03:00).
+              -- Pré-filtro por texto (usa o índice store_id + data): de ontem a amanhã.
+              AND v.data >= to_char((now() AT TIME ZONE 'America/Sao_Paulo')::date - 1, 'YYYY-MM-DD')
+              AND v.data <  to_char((now() AT TIME ZONE 'America/Sao_Paulo')::date + 2, 'YYYY-MM-DD')
+              -- Dia exato em São Paulo (o servidor roda em UTC). O CASE só converte texto com
+              -- formato ISO: uma linha com data inválida não pode derrubar a consulta inteira.
+              AND (CASE WHEN v.data ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T'
+                        THEN (v.data::timestamptz AT TIME ZONE 'America/Sao_Paulo')::date
+                   END) = (now() AT TIME ZONE 'America/Sao_Paulo')::date
               AND (
                   v.sku IN (:skusDuasTalas)
                   OR EXISTS (SELECT 1 FROM estoque_rodas_distribuidora e WHERE e.sku = v.sku)
@@ -484,6 +522,7 @@ module.exports = {
   marcarComoColetada,
   getTop5RodasVendidas,
   getRodasAtencao,
-  countDailyRodasVendidas
+  countDailyRodasVendidas,
+  marcarPedidosCancelados
 };
 

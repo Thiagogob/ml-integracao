@@ -98,6 +98,13 @@ const runSalesSync = async () => {
             }
         }
 
+        // Isolado: falha ao consultar cancelamentos não pode impedir o registro de vendas novas
+        try {
+            await vendasService.marcarPedidosCancelados(access_token);
+        } catch (error) {
+            logger.error({ err: error }, 'observador: erro ao marcar pedidos cancelados');
+        }
+
         const skusEAnuncios = await vendasService.syncVendas(access_token);
 
 
@@ -153,7 +160,7 @@ const runSalesSync = async () => {
                     if(!detalhesAnuncioQueVendeu[0].isUnitario){
 
 
-                        await vendasService.preencherDisponibilidade(anuncio.id_venda, anuncio.sku, 4)
+                        await vendasService.preencherDisponibilidade(anuncio.id_venda, anuncio.sku, 4, anuncio.item_seq)
                         //Primeiro Atualizar a quantidade disponível no estoque interno da distribuidora
                         if(!SKUs_DUAS_TALAS.includes(anuncio.sku)){
                             await stockService.subtrairRodasDoEstoque(anuncio.sku, anuncio.quantidade * 4);
@@ -167,7 +174,7 @@ const runSalesSync = async () => {
                     else{
 
 
-                        await vendasService.preencherDisponibilidade(anuncio.id_venda, anuncio.sku, 1)
+                        await vendasService.preencherDisponibilidade(anuncio.id_venda, anuncio.sku, 1, anuncio.item_seq)
 
                         await stockService.subtrairRodasDoEstoque(anuncio.sku, anuncio.quantidade);
 
