@@ -13,6 +13,7 @@ import PageHeader from '../components/ui/PageHeader';
 
 
 interface Venda {
+    id: number; // id do item (um pedido pode ter vários)
     id_venda: string;
     id_ml: number;
     sku: string;
@@ -115,14 +116,14 @@ const getEstoqueIndicator = (venda: Venda): { label: string; tone: BadgeTone } =
 };
 
 
-const handleMarcarComoColetado = async (vendaId: string, setVendas: any, setError: any) => {
+const handleMarcarComoColetado = async (vendaId: number, setVendas: any, setError: any) => {
     try {
         // Chamada à API para alterar o status no DB
         // (PUT para atualizar o recurso)
         await api.put(`/vendas/coletado/${vendaId}`); 
         
         // Atualizar o estado local para REMOVER o item da lista
-       setVendas((prevVendas: Venda[]) => prevVendas.filter(venda => venda.id_venda !== vendaId));
+       setVendas((prevVendas: Venda[]) => prevVendas.filter(venda => venda.id !== vendaId));
         
         console.log(`Venda ID: ${vendaId} marcada como coletada e removida da lista.`);
 
@@ -217,7 +218,7 @@ const handleMarcarComoColetado = async (vendaId: string, setVendas: any, setErro
                                 const indicator = getEstoqueIndicator(venda);
                                 return (
                                     <div
-                                        key={venda.id_venda}
+                                        key={venda.id}
                                         className={`${colunas} border-t border-line bg-surface-card`}
                                     >
                                         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -241,7 +242,7 @@ const handleMarcarComoColetado = async (vendaId: string, setVendas: any, setErro
                                                     type="button"
                                                     variant="secondary"
                                                     icon="✓"
-                                                    onClick={() => handleMarcarComoColetado(venda.id_venda, setRawVendas, setError)}
+                                                    onClick={() => handleMarcarComoColetado(venda.id, setRawVendas, setError)}
                                                 >
                                                     Marcar como coletada
                                                 </Button>

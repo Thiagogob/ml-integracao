@@ -28,7 +28,11 @@ const Venda = sequelize.define('Venda', {
         primaryKey: true,
         autoIncrement: true,
     },
-    id_venda: { type: DataTypes.TEXT, unique: true }, 
+    // Uma linha por item do pedido: (id_venda, item_seq) é único (migrations/vendas_itens_status_up.sql)
+    id_venda: { type: DataTypes.TEXT },
+    item_seq: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+    // 'paid' | 'cancelled': pedido cancelado depois de pago sai das métricas e da coleta
+    status: { type: DataTypes.TEXT, allowNull: false, defaultValue: 'paid' },
     data: { type: DataTypes.TEXT },
     id_ml: { type: DataTypes.TEXT },
     sku: { type: DataTypes.TEXT },

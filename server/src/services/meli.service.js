@@ -142,24 +142,20 @@ const authTest = async () => {
 // do ML e eventuais horas com o servidor fora do ar.
 const JANELA_VENDAS_HORAS = 48;
 
-const getVendas = async (access_token) => {
+// Busca paginada de pedidos com um status, atualizados desde 'desde' (ISO)
+const buscarPedidos = async (access_token, status, desde) => {
 
-    let todasAsVendas = [];
+    let todosOsPedidos = [];
     let offset = 0;
     const limit = 50;
-
-    const desde = new Date(Date.now() - JANELA_VENDAS_HORAS * 60 * 60 * 1000).toISOString();
 
     const headers = {
         "Authorization": `Bearer ${access_token}`
     };
 
-    // Loop principal para a paginação
     while (true) {
 
-        // Só pedidos pagos: cancelados não podem dar baixa no estoque, e pedidos ainda não
-        // pagos voltam a aparecer na janela (date_last_updated muda) quando forem pagos
-        const url = `https://api.mercadolibre.com/orders/search?seller=${SELLER_ID}&order.status=paid&order.date_last_updated.from=${desde}&sort=date_asc&offset=${offset}&limit=${limit}`;
+        const url = `https://api.mercadolibre.com/orders/search?seller=${SELLER_ID}&order.status=${status}&order.date_last_updated.from=${desde}&sort=date_asc&offset=${offset}&limit=${limit}`;
 
         try {
             const resposta = await fetch(url, {
@@ -168,26 +164,35 @@ const getVendas = async (access_token) => {
             });
 
             if (!resposta.ok) {
-                // Lidar com erros de requisição, como 401 (não autorizado)
                 throw new Error(`Erro na requisição: ${resposta.status}`);
             }
 
             const resposta_json = await resposta.json();
-            const vendasDaPagina = resposta_json.results || [];
+            const pedidosDaPagina = resposta_json.results || [];
 
-            todasAsVendas = todasAsVendas.concat(vendasDaPagina);
+            todosOsPedidos = todosOsPedidos.concat(pedidosDaPagina);
             offset += limit;
 
-            if (vendasDaPagina.length === 0 || offset >= resposta_json.paging.total) {
+            if (pedidosDaPagina.length === 0 || offset >= resposta_json.paging.total) {
                 break;
             }
 
         } catch (error) {
-            logger.error({ err: error }, 'erro ao buscar vendas ML');
-            // Lança o erro para que o controller o capture
+            logger.error({ err: error, status }, 'erro ao buscar pedidos ML');
             throw error;
         }
     }
+
+    return todosOsPedidos;
+};
+
+const getVendas = async (access_token) => {
+
+    const desde = new Date(Date.now() - JANELA_VENDAS_HORAS * 60 * 60 * 1000).toISOString();
+
+    // Só pedidos pagos: cancelados não podem dar baixa no estoque, e pedidos ainda não
+    // pagos voltam a aparecer na janela (date_last_updated muda) quando forem pagos
+    const todasAsVendas = await buscarPedidos(access_token, 'paid', desde);
 
     // Pedidos antigos também mudam de date_last_updated (envio, entrega, reclamação):
     // só interessam os fechados (pagos) dentro da janela, para não reprocessar venda antiga
@@ -195,8 +200,18 @@ const getVendas = async (access_token) => {
         venda.date_closed && new Date(venda.date_closed) >= new Date(desde)
     );
 
-    // Retorna o objeto com todas as vendas para a rota
     return { results: vendasFechadasNaJanela };
+};
+
+// IDs dos pedidos cancelados (atualizados) na janela. Sem filtrar por date_closed:
+// um pedido pago há dias pode ser cancelado agora.
+const getIdsPedidosCancelados = async (access_token) => {
+
+    const desde = new Date(Date.now() - JANELA_VENDAS_HORAS * 60 * 60 * 1000).toISOString();
+
+    const cancelados = await buscarPedidos(access_token, 'cancelled', desde);
+
+    return [...new Set(cancelados.map(pedido => String(pedido.id)))];
 };
 
 
@@ -713,6 +728,7 @@ const processCriticalUpdates = async(mudancasCriticas,access_token) => {
 module.exports = {
   getAuth,
   getVendas,
+  getIdsPedidosCancelados,
   authTest,
   getIdsAnuncios,
   getDetalhesAnuncios,

@@ -11,7 +11,8 @@ router.get('/listarVendas',
     VendasController.listarVendas
 );
 
-router.put('/coletado/:idVenda',
+// :idVendaItem é o id da linha em vendas_ml (um pedido pode ter vários itens)
+router.put('/coletado/:idVendaItem',
     authMiddleware.protect,
     VendasController.marcarComoColetada
 );
